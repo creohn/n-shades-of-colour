@@ -1,6 +1,6 @@
 PLAN.md
 
-Implementation plan for Tone Ladder, a hue-shift tonal shades generator.
+Implementation plan for n Shades of Colour, a hue-shift tonal shades generator.
 
 ⸻
 
@@ -38,7 +38,7 @@ All paths are relative. No absolute URLs. Compatible with GitHub Pages deploymen
 
 2. Core Algorithm Approach
 
-The algorithm is the reason this app exists. It must produce artist-style tonal shadess where warm light creates cool shadows (and vice versa), not naive HSL lightness scaling.
+The algorithm is the reason this app exists. It must produce artist-style tonal shades where warm light creates cool shadows (and vice versa), not naive HSL lightness scaling.
 
 2.1 Colour Space
 
@@ -50,16 +50,16 @@ The algorithm operates internally in OKLCH (or another perceptually uniform colo
 Hex input is converted to OKLCH for manipulation, then converted back to hex for output.
 
 2.2 Interface
-generateShades(baseHex, temperature, steps, mode) → string[]
+generateShades(baseHex, temperature, steps, mode) to string[]
 
 Parameters:
 	•	baseHex: 6-digit hex string (with or without #, default #2F6FED)
 	•	temperature: number
-	•	range: -1.0 (cool light) → 0.0 (neutral) → +1.0 (warm light)
+	•	range: -1.0 (cool light) to 0.0 (neutral) to +1.0 (warm light)
 	•	steps: integer (allowed values: 9 or 11)
-	•	mode: “conservative” or “painterly” (default 'painterly')
+	•	mode: “conservative” or “creative” (default 'creative')
 
-Returns an array of hex strings ordered from darkest → lightest.
+Returns an array of hex strings ordered from darkest to lightest.
 
 2.3 Behavioural Rules
 	1.	Base placement
@@ -78,7 +78,7 @@ The absolute value of temperature controls shift strength; the sign controls dir
 	•	Zero shift at the base colour position
 	•	Shift increases toward the extremes
 	•	Conservative mode: maximum shift approximately ±6°
-	•	Painterly mode: maximum shift approximately ±14°
+	•	creative mode: maximum shift approximately ±14°
 	4.	Saturation curve
 	•	Saturation peaks near midtones
 	•	Saturation decreases toward both extremes
@@ -92,7 +92,7 @@ The absolute value of temperature controls shift strength; the sign controls dir
 
 The algorithm must pass this acceptance test:
 
-In Painterly mode with default demo settings, the generated shades must show:
+In creative mode with default demo settings, the generated shades must show:
 	•	at least 8° hue difference between the lightest step and the base
 	•	at least 8° hue difference in the opposite direction between the darkest step and the base
 
@@ -111,7 +111,7 @@ If this test fails, the algorithm is too conservative and the app has no value o
     label: string,
     temperature: number,
     steps: number,
-    mode: "conservative" | "painterly"
+    mode: "conservative" | "creative"
   },
   preview: {
     shadesHexes: string[] | null
@@ -139,13 +139,13 @@ HistoryEntry:
 }
 
 3.2 Data Flow
-	1.	User edits input fields → input state updates → preview regenerates (not a generation)
-	2.	User clicks Generate → new HistoryEntry created → added to recent → undo buffer cleared → this is a generation
-	3.	User clicks “X” on recent item → entry removed → stored in undo buffer (in-memory)
-	4.	User clicks Undo → entry restored to previous index → undo buffer cleared
-	5.	User stars an item → entry copied to starred list
-	6.	User unstars an item → entry removed from starred list
-	7.	User clicks Clear all → confirmation prompt → recent, starred, and undo buffer cleared
+	1.	User edits input fields to input state updates to preview regenerates (not a generation)
+	2.	User clicks Generate to new HistoryEntry created to added to recent to undo buffer cleared to this is a generation
+	3.	User clicks “X” on recent item to entry removed to stored in undo buffer (in-memory)
+	4.	User clicks Undo to entry restored to previous index to undo buffer cleared
+	5.	User stars an item to entry copied to starred list
+	6.	User unstars an item to entry removed from starred list
+	7.	User clicks Clear all to confirmation prompt to recent, starred, and undo buffer cleared
 
 3.3 Definition of “Generation”
 
@@ -164,7 +164,7 @@ When a new generation is committed:
 
 4.1 Storage
 
-Single localStorage key: toneLadder
+Single localStorage key: nShadesOfColour
 
 Schema:
 {
@@ -185,7 +185,7 @@ Storage does not write:
 	•	input field state
 
 4.2 Recent List
-	•	Maximum 10 entries
+	•	Maximum 12 entries
 	•	Newest entries appear first
 	•	De-duplication: identical label + baseHex + temperature + steps + mode replaces older entry
 	•	Each entry displays an “X” remove button
@@ -217,7 +217,7 @@ Undo buffer is cleared when:
 	•	undo is performed
 	•	clear all is confirmed
 
-4.5 Clear All
+4.5 Clear all
 	•	Display confirmation prompt: “Are you sure?”
 	•	On confirm: clear recent, starred, and undo buffer
 	•	Write empty state to storage
@@ -231,10 +231,10 @@ This section describes what each UI region does, not how it looks.
 	•	Hex colour input
 	•	Colour label input (canonical, never auto-changed)
 	•	Light temperature slider
-	•	Cool ← Neutral → Warm
+	•	Cool ← Neutral to Warm
 	•	Default: slightly warm (e.g. +0.25)
 	•	Steps selector (9 or 11)
-	•	Mode toggle (conservative / painterly)
+	•	Mode toggle (conservative / creative)
 	•	Generate button
 
 Input changes update preview only. Generate commits to history.
@@ -276,7 +276,7 @@ Clear all:
 
 Slug rules:
 	•	lowercase
-	•	spaces → hyphens
+	•	spaces to hyphens
 	•	remove non-alphanumeric characters
 
 ⸻
@@ -287,7 +287,7 @@ Phase 1: Algorithm Foundation
 	1.	Implement colour conversion utilities (hex ↔ OKLCH)
 	2.	Implement hue-shift algorithm
 	3.	Expose generateShades API
-	4.	Validate painterly hue shift ≥8° at extremes
+	4.	Validate creative hue shift ≥8° at extremes
 
 Phase 2: Storage and History
 	5.	Implement storage.js
@@ -316,9 +316,9 @@ Phase 5: Validation
 
 Algorithm
 	•	Correct number of steps
-	•	Darkest → lightest order
+	•	Darkest to lightest order
 	•	Base near midpoint
-	•	Painterly ≥8° hue shift
+	•	creative ≥8° hue shift
 	•	No pure white / black
 	•	Saturation peaks near midtones
 
@@ -347,7 +347,7 @@ Appendix: Canonical Label Handling
 	•	collapse repeated hyphens
 
 Examples:
-Ocean Blue → ocean-blue
-Primary_Red → primary-red
-BRAND ACCENT → brand-accent
-Test–Color → test-color
+Ocean Blue to ocean-blue
+Primary_Red to primary-red
+BRAND ACCENT to brand-accent
+Test–Color to test-color

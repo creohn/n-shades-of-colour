@@ -1,6 +1,6 @@
 /**
- * Core hue-shift algorithm for Tone Ladder
- * Generates perceptually uniform tonal ramps with artist-style hue shifts
+ * Core hue-shift algorithm for n Shades of Colour
+ * Generates perceptually uniform tonal shades with artist-style hue shifts
  */
 
 import {
@@ -22,10 +22,10 @@ import {
 // Modes differ ONLY by castStrength — the intensity of the warm/cool colour
 // cast applied away from the midpoint.  All other parameters are shared.
 // castStrength maps to the Photoshop reference model's "colour-cast layer opacity":
-//   0 → pure lightness ramp (no tint)   higher → stronger temperature tint
+//   0 → pure lightness shades (no tint)   higher → stronger temperature tint
 const MODE_CONFIG = {
   conservative: { castStrength: 0.30, highlightChromaExp: 1.5 },  // subtle tint for UI / product work
-  painterly:    { castStrength: 0.50, highlightChromaExp: 2.2 },  // bolder tint for illustration / art direction
+  creative:    { castStrength: 0.50, highlightChromaExp: 2.2 },  // bolder tint for illustration / art direction
 };
 
 // Shared chroma shaping constants (identical across modes)
@@ -48,7 +48,7 @@ const CONVERGENCE_CHROMA_MIN = 0.01;
 const CONVERGENCE_CHROMA_REF = 0.04;
 
 // Base convergence factor (scaled by castStrength at runtime)
-// Chosen so conservative (0.30 * 1.5 = 0.45) and painterly (0.50 * 1.5 = 0.75)
+// Chosen so conservative (0.30 * 1.5 = 0.45) and creative (0.50 * 1.5 = 0.75)
 // produce convergence weights comparable to the v1 algorithm.
 const CONVERGENCE_BASE = 1.5;
 
@@ -224,7 +224,7 @@ function sampleColorForDE(L, relPos, baseOklch, temperature, config, isNeutralBa
 }
 
 /**
- * Reparameterize one half of the lightness ramp by equal ΔE spacing
+ * Reparameterize one half of the lightness shades by equal ΔE spacing
  *
  * Oversamples the half, computes cumulative ΔE (Euclidean in OKLab),
  * then selects L values that divide the total arc into equal segments.
@@ -310,7 +310,7 @@ function reparameterizeHalf(lStart, lEnd, numIntervals, baseOklch, temperature, 
 }
 
 /**
- * Build a perceptually-spaced lightness ramp anchored to the base color
+ * Build a perceptually-spaced lightness shades anchored to the base color
  *
  * Splits the lightness range into shadow and highlight halves at baseL,
  * then uses arc-length reparameterization (cumulative ΔE in OKLab) to
@@ -324,7 +324,7 @@ function reparameterizeHalf(lStart, lEnd, numIntervals, baseOklch, temperature, 
  * @param {boolean} isNeutralBase - Whether base is near-neutral
  * @returns {number[]} Array of lightness values, dark to light
  */
-function buildPerceptualLightnessRamp(baseOklch, steps, midIndex, temperature, config, isNeutralBase) {
+function buildPerceptualLightnessShades(baseOklch, steps, midIndex, temperature, config, isNeutralBase) {
   const baseL = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
 
   const numShadowIntervals = midIndex;          // steps below midpoint
@@ -354,28 +354,28 @@ function buildPerceptualLightnessRamp(baseOklch, steps, midIndex, temperature, c
 }
 
 /**
- * Generates a tonal ramp with hue shifts based on light temperature
+ * Generates a tonal shades with hue shifts based on light temperature
  *
  * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
  * @param {number} temperature - Light temperature -1 (cool) to +1 (warm)
  * @param {number} steps - Number of steps (9 or 11)
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  * @returns {Object[]} Array of OKLCH colors ordered darkest to lightest
  */
-export function generateOklchRamp(baseOklch, temperature, steps, mode) {
-  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
+export function generateOklchShades(baseOklch, temperature, steps, mode) {
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.creative;
 
   const midIndex = Math.floor(steps / 2);
 
   // Detect near-neutral base for temperature study treatment
   const isNeutralBase = baseOklch.C <= NEUTRAL_BASE_C_MAX;
 
-  const lightnessValues = buildPerceptualLightnessRamp(
+  const lightnessValues = buildPerceptualLightnessShades(
     baseOklch, steps, midIndex, temperature, config, isNeutralBase
   );
 
-  // Generate the ramp
-  const ramp = [];
+  // Generate the shades
+  const shades = [];
   for (let i = 0; i < steps; i++) {
     const L = lightnessValues[i];
 
@@ -446,7 +446,7 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
       // Highlight convergence in OKLab (more stable than hue-angle blending).
       // castStrength scales the base convergence factor; position and temperature
       // are handled by wPos and wTemp (convergence has its own spatial profile
-      // that kicks in at the top third, unlike the full-ramp smoothstep above).
+      // that kicks in at the top third, unlike the full-shades smoothstep above).
       if (relativePosition > 0 && temperature !== 0) {
         const highlightPosition = relativePosition;
         const wPos = smoothstep(0.6, 1.0, highlightPosition);
@@ -489,18 +489,18 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // Gamut clamp: reduce chroma to fit sRGB while preserving L and H
     const clamped = clampToSrgbGamut({ L, C, H });
 
-    ramp.push(clamped);
+    shades.push(clamped);
   }
 
-  return ramp;
+  return shades;
 }
 
 /**
- * Calculate chroma for a given position in the ramp
+ * Calculate chroma for a given position in the shades
  * Saturation peaks near midtones and decreases toward extremes
  *
  * @param {number} baseChroma - Base color chroma
- * @param {number} relativePosition - Position in ramp (-1 to +1)
+ * @param {number} relativePosition - Position in shades (-1 to +1)
  */
 function calculateChroma(baseChroma, relativePosition) {
   const minRetention = CHROMA_RETENTION;
@@ -511,7 +511,7 @@ function calculateChroma(baseChroma, relativePosition) {
   const rawMultiplier = 0.5 + 0.5 * Math.cos(relativePosition * Math.PI);
 
   // Apply exponent to control falloff speed
-  // exponent < 1 = slower falloff (keeps saturation longer) - good for painterly
+  // exponent < 1 = slower falloff (keeps saturation longer) - good for creative
   // exponent > 1 = faster falloff (desaturates quicker)
   const saturationMultiplier = Math.pow(rawMultiplier, exponent);
 
@@ -528,11 +528,11 @@ function calculateChroma(baseChroma, relativePosition) {
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature
  * @param {number} steps - Number of steps
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  */
 export function validateHueDeltas(baseHex, temperature, steps, mode) {
   const baseOklch = hexToOklch(baseHex);
-  const ramp = generateOklchRamp(baseOklch, temperature, steps, mode);
+  const shades = generateOklchShades(baseOklch, temperature, steps, mode);
 
   const midIndex = Math.floor(steps / 2);
   const baseHue = baseOklch.H;
@@ -545,7 +545,7 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
   console.log('---');
 
   const deltas = [];
-  ramp.forEach((color, i) => {
+  shades.forEach((color, i) => {
     const delta = hueDifference(baseHue, color.H);
     deltas.push(delta);
     const label = i === midIndex ? '(BASE)' : i < midIndex ? '(shadow)' : '(highlight)';
@@ -568,12 +568,12 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
     deltas,
     darkestDelta,
     lightestDelta,
-    ramp
+    shades
   };
 }
 
 /**
- * Compare Conservative vs Painterly hue shifts for a given color
+ * Compare Conservative vs Creative hue shifts for a given color
  * Logs a side-by-side summary to console
  *
  * @param {string} baseHex - Base color as hex (default: saturated blue #3366cc)
@@ -589,30 +589,30 @@ export function compareModesConsole(baseHex = '#3366cc', temperature = 1, steps 
 
   const conservative = validateHueDeltas(baseHex, temperature, steps, 'conservative');
   console.log('');
-  const painterly = validateHueDeltas(baseHex, temperature, steps, 'painterly');
+  const creative = validateHueDeltas(baseHex, temperature, steps, 'creative');
 
   console.log('');
   console.log('=== SUMMARY ===');
   console.log(`Conservative - Shadow: ${conservative.darkestDelta.toFixed(1)}°, Highlight: ${conservative.lightestDelta.toFixed(1)}°`);
-  console.log(`Painterly    - Shadow: ${painterly.darkestDelta.toFixed(1)}°, Highlight: ${painterly.lightestDelta.toFixed(1)}°`);
-  console.log(`Ratio (P/C)  - Shadow: ${(painterly.darkestDelta / conservative.darkestDelta).toFixed(2)}x, Highlight: ${(painterly.lightestDelta / conservative.lightestDelta).toFixed(2)}x`);
+  console.log(`Creative    - Shadow: ${creative.darkestDelta.toFixed(1)}°, Highlight: ${creative.lightestDelta.toFixed(1)}°`);
+  console.log(`Ratio (Cr/Co) - Shadow: ${(creative.darkestDelta / conservative.darkestDelta).toFixed(2)}x, Highlight: ${(creative.lightestDelta / conservative.lightestDelta).toFixed(2)}x`);
 
-  const painterlyLarger = painterly.darkestDelta > conservative.darkestDelta &&
-                          painterly.lightestDelta > conservative.lightestDelta;
-  console.log(`Painterly > Conservative: ${painterlyLarger ? '✓ PASS' : '✗ FAIL'}`);
+  const creativeLarger = creative.darkestDelta > conservative.darkestDelta &&
+                          creative.lightestDelta > conservative.lightestDelta;
+  console.log(`Creative > Conservative: ${creativeLarger ? '✓ PASS' : '✗ FAIL'}`);
 
   console.groupEnd();
 
-  return { conservative, painterly };
+  return { conservative, creative };
 }
 
 /**
- * Convert OKLCH ramp to hex strings
- * @param {Object[]} oklchRamp - Array of OKLCH colors
+ * Convert OKLCH shades to hex strings
+ * @param {Object[]} oklchShades - Array of OKLCH colors
  * @returns {string[]} Array of hex strings
  */
-export function rampToHex(oklchRamp) {
-  return oklchRamp.map(oklchToHex);
+export function shadesToHex(oklchShades) {
+  return oklchShades.map(oklchToHex);
 }
 
 /**
@@ -645,17 +645,17 @@ function wouldRequireClipping(oklch) {
 }
 
 /**
- * Debug helper: Generate ramp with gamut mapping logging
+ * Debug helper: Generate shades with gamut mapping logging
  * Shows before/after for each step to diagnose hue wobble
  *
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature
  * @param {number} steps - Number of steps
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  */
 export function debugGamutMapping(baseHex, temperature, steps, mode) {
   const baseOklch = hexToOklch(baseHex);
-  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.creative;
   const midIndex = Math.floor(steps / 2);
   const clippingIssues = [];
 
@@ -664,7 +664,7 @@ export function debugGamutMapping(baseHex, temperature, steps, mode) {
   console.log('Step | Before L/C/H | In Gamut? | After L/C/H | dC | dH');
   console.log('-----|--------------|-----------|-------------|-----|----');
 
-  // Simplified ramp generation with logging
+  // Simplified shades generation with logging
   const lightnessValues = [];
   for (let i = 0; i < steps; i++) {
     const t = i / (steps - 1);
@@ -749,11 +749,11 @@ export function debugGamutMapping(baseHex, temperature, steps, mode) {
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature (-1 to +1)
  * @param {number} steps - Number of steps (9 or 11)
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  */
 export function debugHueShifts(baseHex, temperature, steps, mode) {
   const baseOklch = hexToOklch(baseHex);
-  const ramp = generateOklchRamp(baseOklch, temperature, steps, mode);
+  const shades = generateOklchShades(baseOklch, temperature, steps, mode);
   const midIndex = Math.floor(steps / 2);
   const baseHue = baseOklch.H;
 
@@ -768,7 +768,7 @@ export function debugHueShifts(baseHex, temperature, steps, mode) {
   console.log('Step | H        | Δh from base | Label');
   console.log('-----|----------|--------------|----------');
 
-  ramp.forEach((color, i) => {
+  shades.forEach((color, i) => {
     const delta = hueDifference(baseHue, color.H);
     let label;
 
@@ -824,10 +824,10 @@ export function debugHighlightStability(baseHex = '#2F6FED') {
     { temp: 0.9, steps: 11, mode: 'conservative' },
     { temp: -0.9, steps: 9, mode: 'conservative' },
     { temp: -0.9, steps: 11, mode: 'conservative' },
-    { temp: 0.9, steps: 9, mode: 'painterly' },
-    { temp: 0.9, steps: 11, mode: 'painterly' },
-    { temp: -0.9, steps: 9, mode: 'painterly' },
-    { temp: -0.9, steps: 11, mode: 'painterly' }
+    { temp: 0.9, steps: 9, mode: 'creative' },
+    { temp: 0.9, steps: 11, mode: 'creative' },
+    { temp: -0.9, steps: 9, mode: 'creative' },
+    { temp: -0.9, steps: 11, mode: 'creative' }
   ];
 
   const baseOklch = hexToOklch(baseHex);
@@ -839,11 +839,11 @@ export function debugHighlightStability(baseHex = '#2F6FED') {
   console.log('');
 
   for (const tc of testCases) {
-    const ramp = generateOklchRamp(baseOklch, tc.temp, tc.steps, tc.mode);
+    const shades = generateOklchShades(baseOklch, tc.temp, tc.steps, tc.mode);
     const midIndex = Math.floor(tc.steps / 2);
 
     // Get highlight steps (last 3)
-    const highlightSteps = ramp.slice(-3);
+    const highlightSteps = shades.slice(-3);
     const highlightDeltas = highlightSteps.map(c => hueDifference(baseOklch.H, c.H));
 
     // Check for sign flips or large jumps between adjacent highlights

@@ -348,7 +348,7 @@ input[type=range]::-moz-range-thumb {
   font-size: 0.75rem;
 }
 
-.ramp {
+.shades {
   display: flex;
   gap: 2px;
   height: 120px;
@@ -659,8 +659,8 @@ input[type=range]::-moz-range-thumb {
     padding: 16px;
   }
 
-  /* Vertical ramp */
-  .ramp {
+  /* Vertical shades */
+  .shades {
     flex-direction: column;
     height: auto;
     gap: 2px;

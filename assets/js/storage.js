@@ -1,9 +1,9 @@
 /**
- * Tone Ladder Storage Module
+ * n Shades of Colour Storage Module
  *
  * Handles localStorage persistence for history data.
  *
- * PERSISTED (in localStorage key "toneLadder"):
+ * PERSISTED (in localStorage key "nShadesOfColour"):
  *   - version: schema version number
  *   - recent: array of recent HistoryEntry objects
  *   - starred: array of starred HistoryEntry objects
@@ -14,7 +14,7 @@
  *   - input field state
  */
 
-const STORAGE_KEY = 'toneLadder';
+const STORAGE_KEY = 'nShadesOfColour';
 const CURRENT_VERSION = 1;
 
 /**
@@ -75,12 +75,12 @@ function isValidEntry(entry) {
     }
   }
 
-  // rampHexes must be array of strings
-  if (!Array.isArray(entry.rampHexes)) {
+  // shadesHexes must be array of strings
+  if (!Array.isArray(entry.shadesHexes)) {
     return false;
   }
 
-  for (const hex of entry.rampHexes) {
+  for (const hex of entry.shadesHexes) {
     if (typeof hex !== 'string') {
       return false;
     }
@@ -121,7 +121,7 @@ export function load() {
     const data = JSON.parse(raw);
 
     if (!isValidData(data)) {
-      console.warn('Tone Ladder: Invalid storage data, returning defaults');
+      console.warn('n Shades of Colour: Invalid storage data, returning defaults');
       return createEmptyData();
     }
 
@@ -132,7 +132,7 @@ export function load() {
       starred: filterValidEntries(data.starred)
     };
   } catch (e) {
-    console.warn('Tone Ladder: Failed to load storage, returning defaults', e);
+    console.warn('n Shades of Colour: Failed to load storage, returning defaults', e);
     return createEmptyData();
   }
 }
@@ -154,7 +154,7 @@ export function save(data) {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch (e) {
-    console.error('Tone Ladder: Failed to save to storage', e);
+    console.error('n Shades of Colour: Failed to save to storage', e);
   }
 }
 
@@ -165,6 +165,6 @@ export function clear() {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (e) {
-    console.error('Tone Ladder: Failed to clear storage', e);
+    console.error('n Shades of Colour: Failed to clear storage', e);
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Tone Ladder History Module
+ * n Shades of Colour History Module
  *
  * Manages recent list, starred list, and undo functionality.
  *
@@ -112,7 +112,7 @@ function labelToToken(label) {
  * @param {string} customLabel - User-provided label (may be empty)
  * @param {string} baseHex - Base hex color
  * @param {number} temperature - Temperature value
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  * @param {number} steps - Step count
  * @returns {string}
  */
@@ -168,11 +168,11 @@ export function getDisplayLabel(entry) {
  * @param {string} baseHex - Base hex color
  * @param {number} temperature - Temperature value
  * @param {number} steps - Number of steps (9 or 11)
- * @param {string} mode - 'conservative' or 'painterly'
- * @param {string[]} rampHexes - Generated ladder hex values (stored, not regenerated)
+ * @param {string} mode - 'conservative' or 'creative'
+ * @param {string[]} shadesHexes - Generated shades hex values (stored, not regenerated)
  * @returns {Object} HistoryEntry
  */
-export function createEntry(customLabel, baseHex, temperature, steps, mode, rampHexes) {
+export function createEntry(customLabel, baseHex, temperature, steps, mode, shadesHexes) {
   const entry = {
     id: generateId(),
     customLabel: customLabel || null,
@@ -180,7 +180,7 @@ export function createEntry(customLabel, baseHex, temperature, steps, mode, ramp
     temperature: temperature,
     steps: steps,
     mode: mode,
-    rampHexes: rampHexes,
+    shadesHexes: shadesHexes,
     createdAt: Date.now()
   };
   // Add tokenPrefix for CSS export
@@ -225,10 +225,10 @@ function isExactDuplicate(a, b) {
   if (a.mode !== b.mode) return false;
 
   // Compare output (exact array match)
-  if (!a.rampHexes || !b.rampHexes) return false;
-  if (a.rampHexes.length !== b.rampHexes.length) return false;
-  for (let i = 0; i < a.rampHexes.length; i++) {
-    if (a.rampHexes[i] !== b.rampHexes[i]) return false;
+  if (!a.shadesHexes || !b.shadesHexes) return false;
+  if (a.shadesHexes.length !== b.shadesHexes.length) return false;
+  for (let i = 0; i < a.shadesHexes.length; i++) {
+    if (a.shadesHexes[i] !== b.shadesHexes[i]) return false;
   }
 
   return true;

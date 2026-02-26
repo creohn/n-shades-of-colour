@@ -1,4 +1,4 @@
-# Tone Ladder — Behaviour Contract
+# n Shades of Colour — Behaviour Contract
 
 Observable behavioural rules for the colour algorithm.
 All algorithm changes must preserve these outcomes.
@@ -53,7 +53,7 @@ If no compared pair exceeds the threshold, WARN.
 
 ### 2.2 Mode separation
 
-For bases with visible chroma (C ≥ 0.02 at midpoint), switching between conservative and painterly at the same temperature should produce a perceptible difference in at least one of the top 3 highlights or bottom 3 shadows, using the same ΔE thresholds as §2.1.
+For bases with visible chroma (C ≥ 0.02 at midpoint), switching between conservative and creative at the same temperature should produce a perceptible difference in at least one of the top 3 highlights or bottom 3 shadows, using the same ΔE thresholds as §2.1.
 
 If no compared pair exceeds the threshold, WARN.
 

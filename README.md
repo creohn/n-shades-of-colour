@@ -1,6 +1,6 @@
 # n Shades of Colour
 
-n Shades of Colour is a static web tool for generating painterly, hue-shifted tonal colour shadess. It produces creative value scales where warm light creates cool shadows (& vice versa), rather than mathematical brightness scaling. The algorithm operates in OKLCH colour space to ensure perceptually uniform results.
+n Shades of Colour is a static web tool for generating creative, hue-shifted tonal colour shades. It produces creative value scales where warm light creates cool shadows (& vice versa), rather than mathematical brightness scaling. The algorithm operates in OKLCH colour space to ensure perceptually uniform results.
 
 ## What this project is (& is not)
 
@@ -33,9 +33,9 @@ Plain CSS in 'assets/css/styles.css', no preprocessor, no build step
 
 ## Deployment
 
-The site deploys as a GitHub Pages project site from the repository root.
+The site deploys at creohn/n-shades-of-colour from the repository root.
 
-- URL: 'https://creohn.github.io/n-shades-of-colour'
+- URL: 'https://creohn.de/n-shades-of-colour'
 - All paths must be relative to ensure correct resolution
 
 ## Project structure

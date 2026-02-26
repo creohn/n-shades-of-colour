@@ -14,7 +14,7 @@
   <p class="instructions">Open the browser console (Cmd+Option+J / Ctrl+Shift+J) to see output.</p>
 
   <script type="module">
-    import { generateShade } from './assets/js/colorModels/index.js';
+    import { generateShades } from './assets/js/colorModels/index.js';
     import {
       hexToOklch, clampToSrgbGamut, oklchToOklab,
       hexToSrgb, srgbToLinearRgb, linearRgbToOklab
@@ -95,10 +95,10 @@
       let hardFails = 0;
       const warnings = [];   // { base, message }
 
-      // Pre-generate all shadess once
-      const shadess = QACases.map(tc => ({
+      // Pre-generate all shades once
+      const shades = QACases.map(tc => ({
         ...tc,
-        shades: generateShade(tc.base, tc.temp, tc.steps, tc.mode),
+        shades: generateShades(tc.base, tc.temp, tc.steps, tc.mode),
       }));
 
       // Helper to label a case
@@ -114,7 +114,7 @@
       console.log('');
       console.log('§1.1 Monotonic lightness');
       const failsBefore_1_1 = hardFails;
-      for (const tc of shadess) {
+      for (const tc of shades) {
         let prev = -Infinity;
         for (let i = 0; i < tc.shades.length; i++) {
           const L = hexToOklch(tc.shades[i]).L;
@@ -131,7 +131,7 @@
       console.log('');
       console.log('§1.2 Midpoint anchoring');
       const failsBefore_1_2 = hardFails;
-      for (const tc of shadess) {
+      for (const tc of shades) {
         const mid = Math.floor(tc.steps / 2);
         const midHex = tc.shades[mid].toUpperCase();
         const baseHex = tc.base.toUpperCase();
@@ -146,7 +146,7 @@
       console.log('');
       console.log('§1.3 No dead steps');
       const failsBefore_1_3 = hardFails;
-      for (const tc of shadess) {
+      for (const tc of shades) {
         for (let i = 1; i < tc.shades.length; i++) {
           if (tc.shades[i].toUpperCase() === tc.shades[i - 1].toUpperCase()) {
             hardFails++;
@@ -160,7 +160,7 @@
       console.log('');
       console.log('§1.4 Gamut safety');
       const failsBefore_1_4 = hardFails;
-      for (const tc of shadess) {
+      for (const tc of shades) {
         for (let i = 0; i < tc.shades.length; i++) {
           const rgb = hexToRgb255(tc.shades[i]);
           const valid = [rgb.r, rgb.g, rgb.b].every(v =>
@@ -185,7 +185,7 @@
       console.log('');
       console.log('§1.5 Temperature-zero neutrality');
       const failsBefore_1_5 = hardFails;
-      const tempZeroCases = shadess.filter(tc => tc.temp === 0);
+      const tempZeroCases = shades.filter(tc => tc.temp === 0);
       const HUE_DRIFT_C_MIN = 0.04;  // min chroma for hue to survive hex round-trip
       const HUE_DRIFT_L_MIN = 0.15;  // min lightness (dark-step quantisation guard)
       for (const tc of tempZeroCases) {
@@ -239,7 +239,7 @@
       const failsBefore_1_6 = hardFails;
       const ENDPOINT_L_CEILING = 0.98;
       const ENDPOINT_C_MIN = 0.005;
-      const tempNonZeroCases = shadess.filter(tc => tc.temp !== 0);
+      const tempNonZeroCases = shades.filter(tc => tc.temp !== 0);
       for (const tc of tempNonZeroCases) {
         const endpoints = [
           { idx: 0, hex: tc.shades[0] },
@@ -324,8 +324,8 @@
       for (const base of chromaBases) {
         const modes = [...new Set(QACases.filter(tc => tc.base === base).map(tc => tc.mode))];
         for (const mode of modes) {
-          const warm = shadess.find(tc => tc.base === base && tc.mode === mode && tc.temp > 0);
-          const cool = shadess.find(tc => tc.base === base && tc.mode === mode && tc.temp < 0);
+          const warm = shades.find(tc => tc.base === base && tc.mode === mode && tc.temp > 0);
+          const cool = shades.find(tc => tc.base === base && tc.mode === mode && tc.temp < 0);
           if (!warm || !cool) continue;
 
           // Check highlights and shadows
@@ -355,8 +355,8 @@
         const temps = [...new Set(QACases.filter(tc => tc.base === base).map(tc => tc.temp))];
         for (const temp of temps) {
           if (temp === 0) continue; // modes don't differ at temp=0
-          const cons = shadess.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'conservative');
-          const paint = shadess.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'creative');
+          const cons = shades.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'conservative');
+          const paint = shades.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'creative');
           if (!cons || !paint) continue;
 
           const regions = [
@@ -419,7 +419,7 @@
       console.log('='.repeat(60));
       console.log('SUMMARY');
       console.log('='.repeat(60));
-      console.log(`  Cases:    ${shadess.length}`);
+      console.log(`  Cases:    ${shades.length}`);
       console.log(`  FAIL:     ${hardFails}`);
       console.log(`  WARN:     ${warnings.length}`);
 

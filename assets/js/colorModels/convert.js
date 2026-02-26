@@ -1,5 +1,5 @@
 /**
- * Color conversion utilities for Tone Ladder
+ * Color conversion utilities for n Shades of Colour
  * Converts between hex, sRGB, linear RGB, XYZ, OKLab, and OKLCH color spaces
  */
 

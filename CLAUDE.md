@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tone Ladder is a static (HTML/CSS/JS) hue-shift tonal shade generator. It produces artist-style value scales where warm light creates cool shadows (and vice versa), operating in OKLCH colour space for perceptually uniform results.
+n Shades of Colour is a static (HTML/CSS/JS) hue-shift tonal shade generator. It produces artist-style value scales where warm light creates cool shadows (and vice versa), operating in OKLCH colour space for perceptually uniform results.
 
 ## Constraints
 
@@ -31,11 +31,11 @@ Open `http://localhost:8000`. All JS uses ES module imports — a server is requ
 
 | File | Role |
 |---|---|
-| `assets/js/colorModels/index.js` | Public API — `generateshade(baseHex, temperature, steps, mode)` → `string[]` (darkest → lightest) |
+| `assets/js/colorModels/index.js` | Public API — `generateShades(baseHex, temperature, steps, mode)` to `string[]` (darkest to lightest) |
 | `assets/js/colorModels/convert.js` | Colour space conversions: hex ↔ OKLCH, gamut clamping, OKLab utilities |
 | `assets/js/colorModels/hueShift.js` | Core algorithm: OKLCH shade generation, perceptual ΔE spacing, hue convergence, chroma curves |
 | `assets/js/history.js` | In-memory recent/starred lists + single-level undo buffer; reads/writes via `storage.js` |
-| `assets/js/storage.js` | localStorage persistence under key `toneLadder`, schema version 1 |
+| `assets/js/storage.js` | localStorage persistence under key `nShadesOfColour`, schema version 1 |
 | `assets/js/app.js` | State ownership, DOM wiring, event handlers, render functions — orchestration only |
 
 ### Algorithm overview (`hueShift.js`)
@@ -46,23 +46,23 @@ Open `http://localhost:8000`. All JS uses ES module imports — a server is requ
 4. Highlight convergence done in OKLab space (more stable than hue-angle blending at low chroma)
 5. Near-neutral bases (C ≤ 0.03) take a special branch — chroma is generated from scratch rather than scaled
 
-Mode differences are **only** `castStrength`: `conservative = 0.30`, `painterly = 0.50`.
+Mode differences are **only** `castStrength`: `conservative = 0.30`, `creative = 0.50`.
 
 ### State and data flow (`app.js`)
 
-- **Input changes** → `updatePreview()` — regenerates shade live, no history mutation
-- **"Add to History"** → `history.addToRecent(entry)` — commits snapshot, clears undo buffer
-- **"X" remove** → `history.removeFromRecent(id)` — stores entry + index in undo buffer
-- **Undo** → `history.undo()` — restores to original index, clears buffer
+- **Input changes** to `updatePreview()` — regenerates shade live, no history mutation
+- **"Add to History"** to `history.addToRecent(entry)` — commits snapshot, clears undo buffer
+- **"X" remove** to `history.removeFromRecent(id)` — stores entry + index in undo buffer
+- **Undo** to `history.undo()` — restores to original index, clears buffer
 - Undo buffer is in-memory only; it is cleared on page reload, new generation, undo, and clear-all
 
 ### Storage schema
 
-localStorage key `toneLadder`, version 1:
+localStorage key `nShadesOfColour`, version 1:
 ```json
 { "version": 1, "recent": [...], "starred": [...] }
 ```
-`HistoryEntry` fields: `id, customLabel, baseHex, temperature, steps, mode, shadeHexes[], tokenPrefix, createdAt`.
+`HistoryEntry` fields: `id, customLabel, baseHex, temperature, steps, mode, shadesHexes[], tokenPrefix, createdAt`.
 
 ### CSS export token formats
 
@@ -70,12 +70,12 @@ Two formats, both zero-indexed (0 = darkest, steps−1 = lightest):
 - Short: `--{slug}-{step}: #hex;`
 - Long: `--color-{slug}-{step}: #hex;`
 
-Slug rules: lowercase, spaces → hyphens, remove non-alphanumeric, collapse repeated hyphens.
+Slug rules: lowercase, spaces to hyphens, remove non-alphanumeric, collapse repeated hyphens.
 
 ## Behavioural Contracts
 
 See `BEHAVIOUR.md` for the full contract. Key hard invariants:
-- OKLCH L must be **strictly monotonic** (darkest → lightest)
+- OKLCH L must be **strictly monotonic** (darkest to lightest)
 - Midpoint step must equal the **exact input hex** (pinned after OKLCH round-trip)
 - No two adjacent steps may produce the same hex
 - `temperature === 0` must produce **no intentional hue cast**
@@ -86,9 +86,9 @@ See `BEHAVIOUR.md` for the full contract. Key hard invariants:
 The `colorModels/index.js` module exports these for validation work:
 
 ```js
-// Exposed as ToneLadder.* if window-attached, or import directly
-validateshade(baseHex, temperature, steps, mode)   // logs per-step hue deltas
-compareModes(baseHex, temperature, steps)          // conservative vs painterly side-by-side
+// Exposed as nShadesOfColour.* if window-attached, or import directly
+validateShades(baseHex, temperature, steps, mode)    // logs per-step hue deltas, returns pass/fail
+compareModes(baseHex, temperature, steps)          // conservative vs creative side-by-side
 debugGamut(baseHex, temperature, steps, mode)      // gamut mapping before/after
 debugHighlights(baseHex)                           // hue stability across 8 test cases
 debugHue(baseHex, temperature, steps, mode)        // per-step H and Δh summary

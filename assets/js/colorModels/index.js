@@ -1,29 +1,29 @@
 /**
- * Tone Ladder Color Algorithm - Public API
+ * n Shades of Colour Color Algorithm - Public API
  *
- * Generates hue-shift tonal ramps where warm light creates cool shadows
+ * Generates hue-shift tonal shades where warm light creates cool shadows
  * (and vice versa), producing artist-style color relationships.
  */
 
 import { hexToOklch } from './convert.js';
-import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole, debugGamutMapping, debugHighlightStability, debugHueShifts } from './hueShift.js';
+import { generateOklchShades, shadesToHex, validateHueDeltas, compareModesConsole, debugGamutMapping, debugHighlightStability, debugHueShifts } from './hueShift.js';
 
 // Default values
 const DEFAULT_BASE_HEX = '#2F6FED';
-const DEFAULT_TEMPERATURE = 0.6; // warm enough to show >=8 hue shift in painterly mode
+const DEFAULT_TEMPERATURE = 0.6; // warm enough to show >=8 hue shift in creative mode
 const DEFAULT_STEPS = 9;
-const DEFAULT_MODE = 'painterly';
+const DEFAULT_MODE = 'creative';
 
 /**
- * Generate a tonal ramp with hue shifts based on light temperature
+ * Generate a tonal shades with hue shifts based on light temperature
  *
  * @param {string} baseHex - 6-digit hex string (with or without #), default #2F6FED
  * @param {number} temperature - Light temperature: -1.0 (cool) to +1.0 (warm), default 0.6
  * @param {number} steps - Number of steps: 9 or 11, default 9
- * @param {string} mode - 'conservative' or 'painterly', default 'painterly'
+ * @param {string} mode - 'conservative' or 'creative', default 'creative'
  * @returns {string[]} Array of hex strings ordered darkest to lightest
  */
-export function generateRamp(
+export function generateShades(
   baseHex = DEFAULT_BASE_HEX,
   temperature = DEFAULT_TEMPERATURE,
   steps = DEFAULT_STEPS,
@@ -38,25 +38,25 @@ export function generateRamp(
   // Convert to OKLCH
   const baseOklch = hexToOklch(normalizedHex);
 
-  // Generate ramp in OKLCH space
-  const oklchRamp = generateOklchRamp(baseOklch, temperature, steps, mode);
+  // Generate shades in OKLCH space
+  const oklchShades = generateOklchShades(baseOklch, temperature, steps, mode);
 
   // Convert to hex, then pin midpoint to the exact input hex
   // (OKLCH round-trip can introduce ±1 LSB drift in some channels)
-  const hexRamp = rampToHex(oklchRamp);
-  hexRamp[Math.floor(steps / 2)] = normalizedHex;
+  const hexShades = shadesToHex(oklchShades);
+  hexShades[Math.floor(steps / 2)] = normalizedHex;
 
   // §1.3 — No dead steps: warn if adjacent hexes are identical
-  for (let i = 1; i < hexRamp.length; i++) {
-    if (hexRamp[i].toUpperCase() === hexRamp[i - 1].toUpperCase()) {
+  for (let i = 1; i < hexShades.length; i++) {
+    if (hexShades[i].toUpperCase() === hexShades[i - 1].toUpperCase()) {
       console.warn(
-        `[Tone Ladder §1.3] Dead step: steps ${i - 1} and ${i} are both ${hexRamp[i]}` +
+        `[n Shades of Colour §1.3] Dead step: steps ${i - 1} and ${i} are both ${hexShades[i]}` +
         ` (base=${normalizedHex}, temp=${temperature}, steps=${steps}, mode=${mode})`
       );
     }
   }
 
-  return hexRamp;
+  return hexShades;
 }
 
 /**
@@ -92,23 +92,23 @@ function validateInputs(hex, temperature, steps, mode) {
     throw new Error(`Invalid steps: ${steps}. Expected 9 or 11`);
   }
 
-  // Mode must be conservative or painterly
-  if (mode !== 'conservative' && mode !== 'painterly') {
-    throw new Error(`Invalid mode: ${mode}. Expected 'conservative' or 'painterly'`);
+  // Mode must be conservative or creative
+  if (mode !== 'conservative' && mode !== 'creative') {
+    throw new Error(`Invalid mode: ${mode}. Expected 'conservative' or 'creative'`);
   }
 }
 
 /**
  * Validation helper for development - logs hue deltas to console
- * Use to verify painterly mode produces >=8 degree shifts at extremes
+ * Use to verify creative mode produces >=8 degree shifts at extremes
  *
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature
  * @param {number} steps - Number of steps
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  * @returns {Object} Validation results including deltas and pass/fail status
  */
-export function validateRamp(
+export function validateShades(
   baseHex = DEFAULT_BASE_HEX,
   temperature = DEFAULT_TEMPERATURE,
   steps = DEFAULT_STEPS,
@@ -119,7 +119,7 @@ export function validateRamp(
 }
 
 /**
- * Compare Conservative vs Painterly modes side-by-side
+ * Compare Conservative vs Creative modes side-by-side
  * Logs summary to console showing hue deltas for both modes
  *
  * @param {string} baseHex - Base color as hex (default: #3366cc)
@@ -143,7 +143,7 @@ export function debugGamut(
   baseHex = '#2F6FED',
   temperature = 1,
   steps = 11,
-  mode = 'painterly'
+  mode = 'creative'
 ) {
   debugGamutMapping(baseHex, temperature, steps, mode);
 }
@@ -153,7 +153,7 @@ export function debugGamut(
  * Checks for unexpected hue jumps in the top 3 highlight steps
  * Tests at temp ±0.9, steps 9 and 11, both modes
  *
- * Run in console: ToneLadder.debugHighlights('#2F6FED')
+ * Run in console: nShadesOfColour.debugHighlights('#2F6FED')
  */
 export function debugHighlights(baseHex = '#2F6FED') {
   return debugHighlightStability(baseHex);
@@ -163,12 +163,12 @@ export function debugHighlights(baseHex = '#2F6FED') {
  * Debug helper: Print per-step H, Δh from base, and shadow/highlight label
  * Plus summary of average Δh sign for shadows vs highlights
  *
- * Run in console: ToneLadder.debugHue('#2F6FED', 1, 9, 'painterly')
+ * Run in console: nShadesOfColour.debugHue('#2F6FED', 1, 9, 'creative')
  *
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature (-1 to +1)
  * @param {number} steps - Number of steps (9 or 11)
- * @param {string} mode - 'conservative' or 'painterly'
+ * @param {string} mode - 'conservative' or 'creative'
  */
 export function debugHue(
   baseHex = DEFAULT_BASE_HEX,

@@ -1,11 +1,11 @@
 /**
- * Tone Ladder - Application
+ * n Shades of Colour - Application
  *
  * Orchestrates UI, state, and event wiring.
  * Uses history.js and storage.js as source of truth for persisted lists.
  */
 
-import { generateRamp } from './colorModels/index.js';
+import { generateShades } from './colorModels/index.js';
 import { hexToOklch } from './colorModels/convert.js';
 import * as history from './history.js';
 import { generateFactualLabel, getDisplayLabel, generateTokenPrefix } from './history.js';
@@ -20,10 +20,10 @@ const state = {
     label: '',
     temperature: 0.25,
     steps: 9,
-    mode: 'painterly'
+    mode: 'creative'
   },
   preview: {
-    rampHexes: null,
+    shadesHexes: null,
     tokenPrefix: null
   }
 };
@@ -44,7 +44,7 @@ const dom = {
   btnGenerate: document.getElementById('btn-generate'),
 
   // Preview
-  previewRamp: document.getElementById('preview-ramp'),
+  previewShades: document.getElementById('preview-shades'),
 
   // History
   recentList: document.getElementById('recent-list'),
@@ -114,18 +114,18 @@ function sortByLightness(hexArray) {
 // ==========================================================================
 
 /**
- * Render preview ladder swatches
+ * Render preview shades swatches
  */
 function renderPreview() {
-  const { rampHexes } = state.preview;
+  const { shadesHexes } = state.preview;
 
-  if (!rampHexes || rampHexes.length === 0) {
-    dom.previewRamp.innerHTML = '<p class="history-empty">Tweak settings to see your ladder</p>';
+  if (!shadesHexes || shadesHexes.length === 0) {
+    dom.previewShades.innerHTML = '<p class="history-empty">Tweak settings to see your shades</p>';
     dom.exportPanel.hidden = true;
     return;
   }
 
-  dom.previewRamp.innerHTML = rampHexes.map((hex, i) => `
+  dom.previewShades.innerHTML = shadesHexes.map((hex, i) => `
     <div class="swatch" style="background-color: ${hex}">
       <span class="swatch__hex">${hex}</span>
     </div>
@@ -139,23 +139,23 @@ function renderPreview() {
  * Render export code
  */
 function renderExport() {
-  const { rampHexes, tokenPrefix } = state.preview;
-  if (!rampHexes || !tokenPrefix) return;
+  const { shadesHexes, tokenPrefix } = state.preview;
+  if (!shadesHexes || !tokenPrefix) return;
 
   const format = dom.exportFormatSelect.value;
   const prefix = format === 'long' ? '--color-' : '--';
 
-  const lines = rampHexes.map((hex, i) => `${prefix}${tokenPrefix}-${i}: ${hex};`);
+  const lines = shadesHexes.map((hex, i) => `${prefix}${tokenPrefix}-${i}: ${hex};`);
   dom.exportCode.textContent = lines.join('\n');
 }
 
 /**
  * Render a mini swatch strip for history entries
  */
-function renderSwatchStrip(rampHexes) {
+function renderSwatchStrip(shadesHexes) {
   return `
     <div class="swatch-strip">
-      ${rampHexes.map(hex => `<div class="swatch-mini" style="background-color: ${hex}"></div>`).join('')}
+      ${shadesHexes.map(hex => `<div class="swatch-mini" style="background-color: ${hex}"></div>`).join('')}
     </div>
   `;
 }
@@ -199,7 +199,7 @@ function renderRecent() {
             </button>
           </div>
         </div>
-        ${renderSwatchStrip(entry.rampHexes)}
+        ${renderSwatchStrip(entry.shadesHexes)}
       </li>
     `;
   }).join('');
@@ -238,7 +238,7 @@ function renderStarred() {
             </button>
           </div>
         </div>
-        ${renderSwatchStrip(entry.rampHexes)}
+        ${renderSwatchStrip(entry.shadesHexes)}
       </li>
     `;
   }).join('');
@@ -286,16 +286,16 @@ function updatePreview() {
   }
   dom.inputHex.classList.remove('is-invalid');
 
-  // Generate ladder for preview
+  // Generate shades for preview
   // Temperature mapping is handled internally by the color model
-  // Ramp is generated in correct order (darkest → lightest) by construction
+  // Shades are generated in correct order (darkest → lightest) by construction
   try {
-    const rawRamp = generateRamp(baseHex, temperature, steps, mode);
-    state.preview.rampHexes = rawRamp;
+    const rawShades = generateShades(baseHex, temperature, steps, mode);
+    state.preview.shadesHexes = rawShades;
     state.preview.tokenPrefix = generateTokenPrefix(label, baseHex, temperature, mode, steps);
     renderPreview();
   } catch (e) {
-    console.error('Failed to generate ladder:', e);
+    console.error('Failed to generate shades:', e);
   }
 }
 
@@ -313,8 +313,8 @@ function loadEntry(entry) {
   state.input.steps = entry.steps;
   state.input.mode = entry.mode;
 
-  // Load the stored ladder directly (do not regenerate)
-  state.preview.rampHexes = entry.rampHexes;
+  // Load the stored shades directly (do not regenerate)
+  state.preview.shadesHexes = entry.shadesHexes;
   // Use stored tokenPrefix or generate from entry settings (legacy support)
   state.preview.tokenPrefix = entry.tokenPrefix ||
     generateTokenPrefix(entry.customLabel || entry.label, entry.baseHex, entry.temperature, entry.mode, entry.steps);
@@ -433,15 +433,15 @@ function handleAddToHistory() {
     return;
   }
 
-  // Use current preview ladder (already generated live)
-  const rampHexes = state.preview.rampHexes;
-  if (!rampHexes || rampHexes.length === 0) {
+  // Use current preview shades (already generated live)
+  const shadesHexes = state.preview.shadesHexes;
+  if (!shadesHexes || shadesHexes.length === 0) {
     return;
   }
 
   // Create entry and add to history
   // Label is optional - pass trimmed value or empty string
-  const entry = history.createEntry(label.trim(), baseHex, temperature, steps, mode, rampHexes);
+  const entry = history.createEntry(label.trim(), baseHex, temperature, steps, mode, shadesHexes);
   const wasAdded = history.addToRecent(entry);
 
   if (wasAdded) {
@@ -521,7 +521,7 @@ function handleUndo() {
  * Handle clear all button
  */
 function handleClearAll() {
-  if (confirm('Are you sure? This will clear all recent and starred ladders.')) {
+  if (confirm('Are you sure? This will clear all recent and starred shades.')) {
     history.clearAll();
     renderHistory();
   }
