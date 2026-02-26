@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>n Shades of Colour</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header__top">
+        <h1>n Shades of Colour</h1>
+        <nav class="nav">
+          <a href="./index.html" class="nav__link nav__link--active">Home</a>
+          <a href="./about.html" class="nav__link">About</a>
+        </nav>
+      </div>
+      <p class="tagline">Creative colour shades for UI design</p>
+    </header>
+
+    <main class="main">
+      <!-- Input Panel -->
+      <section class="panel panel--input">
+        <h2 class="panel__title">Settings</h2>
+
+        <div class="input-group">
+          <label for="input-hex">Base Colour</label>
+          <div class="input-row">
+            <input type="color" id="input-color-picker" class="color-picker">
+            <input type="text" id="input-hex" placeholder="#2F6FED" maxlength="7">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="input-label">Label <span class="label-hint">(optional)</span></label>
+          <input type="text" id="input-label" placeholder="e.g. Ocean Blue">
+        </div>
+
+        <div class="input-group">
+          <label for="input-temperature">
+            Light Temperature
+            <span class="temperature-value" id="temperature-display">+0.25</span>
+          </label>
+          <div class="slider-container">
+            <span class="slider-label slider-label--left">Cool</span>
+            <input type="range" id="input-temperature" min="-1" max="1" step="0.05" value="0.25">
+            <span class="slider-label slider-label--right">Warm</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Steps</label>
+          <div class="button-group" role="radiogroup" aria-label="Number of steps">
+            <button type="button" class="btn-toggle" data-steps="9" aria-pressed="true">9</button>
+            <button type="button" class="btn-toggle" data-steps="11" aria-pressed="false">11</button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Mode</label>
+          <div class="button-group" role="radiogroup" aria-label="Algorithm mode">
+            <button type="button" class="btn-toggle" data-mode="conservative" aria-pressed="false">Conservative</button>
+            <button type="button" class="btn-toggle" data-mode="creative" aria-pressed="true">Creative</button>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button type="button" id="btn-generate" class="btn btn--primary">Add to History</button>
+          <span class="add-feedback" id="add-feedback" hidden>Added : )</span>
+        </div>
+      </section>
+
+      <!-- Preview Panel -->
+      <section class="panel panel--preview">
+        <h2 class="panel__title">Preview <span class="preview-status">(live)</span></h2>
+        <div class="shades" id="preview-shades">
+          <!-- Swatches rendered by JS -->
+        </div>
+      </section>
+
+      <!-- Export Panel -->
+      <section class="panel panel--export" id="export-panel" hidden>
+        <h2 class="panel__title">Export CSS Variables</h2>
+        <p class="export-hint">Add a label above for human-friendlier token names</p>
+
+        <div class="export-format">
+          <div class="export-header">
+            <label for="export-format-select">Format</label>
+            <select id="export-format-select">
+              <option value="short">--{label}-{step}</option>
+              <option value="long">--color-{label}-{step}</option>
+            </select>
+          </div>
+          <pre class="export-code" id="export-code"></pre>
+          <div class="export-actions">
+            <button type="button" id="btn-copy" class="btn btn--secondary">Copy to clipboard</button>
+            <span class="copy-feedback" id="copy-feedback" hidden>Copied</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- History Panel -->
+    <aside class="sidebar">
+      <section class="panel panel--history">
+        <div class="history-header">
+          <h2 class="panel__title">Recent</h2>
+          <button type="button" id="btn-undo" class="btn btn--small btn--ghost" hidden>Undo</button>
+        </div>
+        <ul class="history-list" id="recent-list">
+          <!-- Recent entries rendered by JS -->
+        </ul>
+        <p class="history-empty" id="recent-empty">No saved shades yet</p>
+      </section>
+
+      <section class="panel panel--starred">
+        <h2 class="panel__title">Starred</h2>
+        <ul class="history-list" id="starred-list">
+          <!-- Starred entries rendered by JS -->
+        </ul>
+        <p class="history-empty" id="starred-empty">No starred shades</p>
+      </section>
+
+      <div class="history-actions">
+        <button type="button" id="btn-clear-all" class="btn btn--small btn--danger">Clear all</button>
+      </div>
+    </aside>
+  </div>
+  <footer class="footer" style="text-align: center; padding-top: 2em;">
+    <p><small>n Shades of Colour is a tool to create shaes, use it or not. Maybe touch some gras.</small></p>
+  </footer>
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,892 @@
+/**
+ * Core hue-shift algorithm for Tone Ladder
+ * Generates perceptually uniform tonal ramps with artist-style hue shifts
+ */
+
+import {
+  hexToOklch,
+  oklchToHex,
+  clampToSrgbGamut,
+  normalizeHue,
+  hueDifference,
+  oklchToOklab,
+  oklabToOklch,
+  oklabToLinearRgb
+} from './convert.js';
+
+// =============================================================================
+// TUNABLE CONSTANTS - adjust these to calibrate mode behavior
+// =============================================================================
+
+// Mode configurations
+// Modes differ ONLY by castStrength — the intensity of the warm/cool colour
+// cast applied away from the midpoint.  All other parameters are shared.
+// castStrength maps to the Photoshop reference model's "colour-cast layer opacity":
+//   0 → pure lightness ramp (no tint)   higher → stronger temperature tint
+const MODE_CONFIG = {
+  conservative: { castStrength: 0.30, highlightChromaExp: 1.5 },  // subtle tint for UI / product work
+  painterly:    { castStrength: 0.50, highlightChromaExp: 2.2 },  // bolder tint for illustration / art direction
+};
+
+// Shared chroma shaping constants (identical across modes)
+const CHROMA_RETENTION = 0.35;              // minimum chroma at extremes
+const CHROMA_CURVE_EXPONENT = 0.9;          // cosine falloff speed
+const NEUTRAL_ENDPOINT_CHROMA_FLOOR = 0.010;
+
+// Light color anchors as OKLab a/b directions (unit vectors)
+// Convergence in OKLab is more stable than hue-angle blending at low chroma
+const WARM_ANCHOR_H = 65;  // degrees
+const COOL_ANCHOR_H = 205; // degrees
+const WARM_ANCHOR_A = Math.cos(WARM_ANCHOR_H * Math.PI / 180); // ~0.42
+const WARM_ANCHOR_B = Math.sin(WARM_ANCHOR_H * Math.PI / 180); // ~0.91
+const COOL_ANCHOR_A = Math.cos(COOL_ANCHOR_H * Math.PI / 180); // ~-0.91
+const COOL_ANCHOR_B = Math.sin(COOL_ANCHOR_H * Math.PI / 180); // ~-0.42
+
+// Convergence chroma threshold: below this, convergence weight fades out
+// This prevents forcing hue direction when chroma is too low for it to matter
+const CONVERGENCE_CHROMA_MIN = 0.01;
+const CONVERGENCE_CHROMA_REF = 0.04;
+
+// Base convergence factor (scaled by castStrength at runtime)
+// Chosen so conservative (0.30 * 1.5 = 0.45) and painterly (0.50 * 1.5 = 0.75)
+// produce convergence weights comparable to the v1 algorithm.
+const CONVERGENCE_BASE = 1.5;
+
+// Highlight tint cap: maximum chroma floor applied to the top 3 highlight steps
+// when temperature !== 0.  Actual floor = castStrength × |temperature| × cap.
+// Prevents chroma from collapsing to 0 so the cast (and thus mode/temp
+// differences) remain perceptible in highlights.  Placed before convergence
+// so the retained chroma gives convergence something to work with.
+const HIGHLIGHT_TINT_CAP = 0.08;
+
+// Near-neutral temperature study thresholds
+// When base chroma is below NEUTRAL_BASE_C_MAX, treat it as a "neutral temperature study"
+// where temperature should be the dominant signal (light color theory on greys)
+const NEUTRAL_BASE_C_MAX = 0.03;
+// Minimum chroma for golden test assertions (below this, hue direction is meaningless)
+const VISIBLE_TINT_C_MIN = 0.01;
+// Maximum chroma to apply in neutral temperature study (keeps it tasteful)
+const NEUTRAL_TINT_C_MAX = 0.035;
+
+// Hue stability thresholds - prevents odd casts when chroma is very low
+// Below CHROMA_FLOOR, hue shift is fully frozen (color is nearly neutral)
+// Between FLOOR and REF, hue shift is progressively damped
+const HUE_STABILITY_CHROMA_FLOOR = 0.012;
+const HUE_STABILITY_CHROMA_REF = 0.045;
+
+// Lightness bounds (prevents pure white/black)
+const L_MIN = 0.08;
+const L_MAX = 0.98;
+
+
+/**
+ * Hue stability damping factor
+ * Returns 0-1 multiplier for hue shift based on target chroma
+ * When chroma is very low (near neutral), hue becomes unstable and can
+ * produce odd casts (pink/lavender near white). This dampens the shift.
+ *
+ * @param {number} chroma - Target chroma value
+ * @returns {number} Damping factor 0-1 (0 = no shift, 1 = full shift)
+ */
+function getHueStabilityFactor(chroma) {
+  if (chroma <= HUE_STABILITY_CHROMA_FLOOR) return 0;
+  if (chroma >= HUE_STABILITY_CHROMA_REF) return 1;
+
+  // Smooth ease-in curve for gradual transition
+  const t = (chroma - HUE_STABILITY_CHROMA_FLOOR) /
+            (HUE_STABILITY_CHROMA_REF - HUE_STABILITY_CHROMA_FLOOR);
+  return t * t; // Quadratic ease-in
+}
+
+/**
+ * Smoothstep interpolation
+ * Returns 0 when x <= edge0, 1 when x >= edge1, smooth curve between
+ *
+ * @param {number} edge0 - Lower edge
+ * @param {number} edge1 - Upper edge
+ * @param {number} x - Input value
+ * @returns {number} Smoothed value 0-1
+ */
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Blend between two hue angles using shortest arc
+ * Handles wraparound at 0/360 correctly
+ *
+ * @param {number} h1 - Start hue (degrees)
+ * @param {number} h2 - End hue (degrees)
+ * @param {number} w - Blend weight 0-1 (0 = h1, 1 = h2)
+ * @returns {number} Interpolated hue (degrees, normalized 0-360)
+ */
+function blendHueDegrees(h1, h2, w) {
+  // Normalize both hues to 0-360
+  h1 = ((h1 % 360) + 360) % 360;
+  h2 = ((h2 % 360) + 360) % 360;
+
+  // Find shortest arc direction
+  let delta = h2 - h1;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+
+  // Interpolate and normalize result
+  const result = h1 + delta * w;
+  return ((result % 360) + 360) % 360;
+}
+
+/**
+ * Apply highlight convergence in OKLab space (more stable than hue-angle blending)
+ *
+ * Instead of blending hue angles (which is unstable at low chroma), we blend
+ * the a/b coordinates toward an anchor direction. This keeps L fixed and
+ * smoothly moves the color toward the light anchor without hue flips.
+ *
+ * @param {Object} oklch - Color in OKLCH { L, C, H }
+ * @param {number} anchorA - Anchor direction a component (unit vector)
+ * @param {number} anchorB - Anchor direction b component (unit vector)
+ * @param {number} weight - Blend weight 0-1
+ * @returns {Object} Blended color in OKLCH { L, C, H }
+ */
+function convergeInOklab(oklch, anchorA, anchorB, weight) {
+  if (weight <= 0 || oklch.C <= 0) return oklch;
+
+  // Convert to OKLab
+  const oklab = oklchToOklab(oklch);
+
+  // Scale anchor direction to match current chroma magnitude
+  // This preserves the chroma level while shifting the hue direction
+  const targetA = anchorA * oklch.C;
+  const targetB = anchorB * oklch.C;
+
+  // Blend a/b toward anchor direction
+  const newA = oklab.a + (targetA - oklab.a) * weight;
+  const newB = oklab.b + (targetB - oklab.b) * weight;
+
+  // Convert back to OKLCH
+  return oklabToOklch({ L: oklab.L, a: newA, b: newB });
+}
+
+/**
+ * Lightweight color computation for ΔE profiling
+ *
+ * Runs the core cast/chroma pipeline without convergence, tint floors,
+ * or endpoint floors.  This is sufficient for measuring
+ * the ΔE profile along the lightness curve — those omitted corrections
+ * are small and don't meaningfully change the perceptual spacing.
+ *
+ * @param {number} L - Lightness value
+ * @param {number} relPos - Relative position (-1 to +1)
+ * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {Object} config - Mode configuration { castStrength }
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
+ * @returns {Object} Gamut-clamped OKLCH { L, C, H }
+ */
+function sampleColorForDE(L, relPos, baseOklch, temperature, config, isNeutralBase) {
+  const t_cast = Math.abs(relPos);
+  const castFactor = smoothstep(0, 1, t_cast);
+  const cast = config.castStrength * castFactor * Math.abs(temperature);
+  const isHighlight = relPos > 0;
+  const isWarmLight = temperature > 0;
+
+  let H, C;
+
+  if (isNeutralBase && temperature !== 0) {
+    let anchorA, anchorB;
+    if (isWarmLight) {
+      anchorA = isHighlight ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+      anchorB = isHighlight ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+    } else {
+      anchorA = isHighlight ? COOL_ANCHOR_A : WARM_ANCHOR_A;
+      anchorB = isHighlight ? COOL_ANCHOR_B : WARM_ANCHOR_B;
+    }
+    H = normalizeHue(Math.atan2(anchorB, anchorA) * (180 / Math.PI));
+    C = cast * NEUTRAL_TINT_C_MAX;
+  } else {
+    const targetChroma = calculateChroma(baseOklch.C, relPos);
+    let anchorHue;
+    if (isWarmLight) {
+      anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
+    } else {
+      anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
+    }
+    const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+    const stabilityFactor = getHueStabilityFactor(targetChroma);
+    H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
+    const highlightFactor = Math.max(0, relPos);
+    const highlightChromaFalloff = 1 - Math.pow(highlightFactor, config.highlightChromaExp);
+    C = targetChroma * highlightChromaFalloff;
+  }
+
+  return clampToSrgbGamut({ L, C, H });
+}
+
+/**
+ * Reparameterize one half of the lightness ramp by equal ΔE spacing
+ *
+ * Oversamples the half, computes cumulative ΔE (Euclidean in OKLab),
+ * then selects L values that divide the total arc into equal segments.
+ *
+ * @param {number} lStart - Start lightness (inclusive)
+ * @param {number} lEnd - End lightness (inclusive)
+ * @param {number} numIntervals - Number of intervals (steps - 1 in this half)
+ * @param {Object} baseOklch - Base color in OKLCH
+ * @param {number} temperature - Light temperature
+ * @param {Object} config - Mode configuration
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
+ * @param {boolean} isHighlightHalf - True for highlight half (relPos 0→+1)
+ * @returns {number[]} Array of numIntervals+1 lightness values
+ */
+function reparameterizeHalf(lStart, lEnd, numIntervals, baseOklch, temperature, config, isNeutralBase, isHighlightHalf) {
+  if (numIntervals <= 0) return [lStart];
+
+  const lRange = lEnd - lStart;
+  if (lRange <= 0) return [lStart];
+
+  const N = 200;
+  const baseL = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
+
+  // Oversample: generate N+1 evenly-spaced L values and compute color at each
+  const samples = [];
+  for (let j = 0; j <= N; j++) {
+    const t = j / N;
+    const L = lStart + t * lRange;
+    // Map L to continuous relativePosition:
+    //   shadow half:    relPos goes from -1 (at L_MIN) to 0 (at baseL)
+    //   highlight half: relPos goes from 0 (at baseL) to +1 (at L_MAX)
+    let relPos;
+    if (isHighlightHalf) {
+      relPos = (baseL < L_MAX) ? (L - baseL) / (L_MAX - baseL) : 0;
+    } else {
+      relPos = (baseL > L_MIN) ? -((baseL - L) / (baseL - L_MIN)) : 0;
+    }
+    const color = sampleColorForDE(L, relPos, baseOklch, temperature, config, isNeutralBase);
+    samples.push({ L, color });
+  }
+
+  // Compute cumulative ΔE (Euclidean in OKLab)
+  const cumDE = [0];
+  for (let j = 1; j <= N; j++) {
+    const labA = oklchToOklab(samples[j - 1].color);
+    const labB = oklchToOklab(samples[j].color);
+    const de = Math.sqrt(
+      (labA.L - labB.L) ** 2 + (labA.a - labB.a) ** 2 + (labA.b - labB.b) ** 2
+    );
+    cumDE.push(cumDE[j - 1] + de);
+  }
+  const totalDE = cumDE[N];
+
+  if (totalDE <= 0) {
+    // Fallback: even L spacing if no perceptual distance (e.g., zero-range half)
+    const result = [];
+    for (let k = 0; k <= numIntervals; k++) {
+      result.push(lStart + (k / numIntervals) * lRange);
+    }
+    return result;
+  }
+
+  // Select L values at equal ΔE intervals via binary search
+  const result = [lStart];
+  for (let k = 1; k < numIntervals; k++) {
+    const targetDE = (k / numIntervals) * totalDE;
+    // Binary search in cumDE
+    let lo = 0, hi = N;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (cumDE[mid] < targetDE) lo = mid;
+      else hi = mid;
+    }
+    // Linear interpolation between samples[lo] and samples[hi]
+    const frac = (cumDE[hi] - cumDE[lo]) > 0
+      ? (targetDE - cumDE[lo]) / (cumDE[hi] - cumDE[lo])
+      : 0;
+    result.push(samples[lo].L + frac * (samples[hi].L - samples[lo].L));
+  }
+  result.push(lEnd);
+
+  return result;
+}
+
+/**
+ * Build a perceptually-spaced lightness ramp anchored to the base color
+ *
+ * Splits the lightness range into shadow and highlight halves at baseL,
+ * then uses arc-length reparameterization (cumulative ΔE in OKLab) to
+ * place steps at equal perceptual intervals within each half.
+ *
+ * @param {Object} baseOklch - Base color in OKLCH
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {number} midIndex - Index of the midpoint step
+ * @param {number} temperature - Light temperature
+ * @param {Object} config - Mode configuration
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
+ * @returns {number[]} Array of lightness values, dark to light
+ */
+function buildPerceptualLightnessRamp(baseOklch, steps, midIndex, temperature, config, isNeutralBase) {
+  const baseL = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
+
+  const numShadowIntervals = midIndex;          // steps below midpoint
+  const numHighlightIntervals = steps - 1 - midIndex; // steps above midpoint
+
+  const shadowL = reparameterizeHalf(
+    L_MIN, baseL, numShadowIntervals,
+    baseOklch, temperature, config, isNeutralBase, false
+  );
+  const highlightL = reparameterizeHalf(
+    baseL, L_MAX, numHighlightIntervals,
+    baseOklch, temperature, config, isNeutralBase, true
+  );
+
+  // Combine (shadow includes baseL at end, highlight starts at baseL — skip duplicate)
+  const lightnessValues = [...shadowL, ...highlightL.slice(1)];
+
+  // Safety: enforce strict monotonicity (should already hold)
+  const L_EPSILON = 0.002;
+  for (let i = 1; i < lightnessValues.length; i++) {
+    if (lightnessValues[i] <= lightnessValues[i - 1]) {
+      lightnessValues[i] = Math.min(L_MAX, lightnessValues[i - 1] + L_EPSILON);
+    }
+  }
+
+  return lightnessValues;
+}
+
+/**
+ * Generates a tonal ramp with hue shifts based on light temperature
+ *
+ * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
+ * @param {number} temperature - Light temperature -1 (cool) to +1 (warm)
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {string} mode - 'conservative' or 'painterly'
+ * @returns {Object[]} Array of OKLCH colors ordered darkest to lightest
+ */
+export function generateOklchRamp(baseOklch, temperature, steps, mode) {
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
+
+  const midIndex = Math.floor(steps / 2);
+
+  // Detect near-neutral base for temperature study treatment
+  const isNeutralBase = baseOklch.C <= NEUTRAL_BASE_C_MAX;
+
+  const lightnessValues = buildPerceptualLightnessRamp(
+    baseOklch, steps, midIndex, temperature, config, isNeutralBase
+  );
+
+  // Generate the ramp
+  const ramp = [];
+  for (let i = 0; i < steps; i++) {
+    const L = lightnessValues[i];
+
+    // Calculate position relative to midpoint (-1 to +1)
+    // Negative = darker than base, Positive = lighter than base
+    const relativePosition = (i - midIndex) / midIndex;
+
+    // === castStrength: per-step colour-cast multiplier ===
+    // t is normalised distance from midpoint: 0 at mid, 1 at endpoints.
+    // smoothstep gives an S-curve — flat near mid (preserving anchoring
+    // in neighbouring steps) and decelerating near endpoints (avoiding
+    // overshoot).  cast = 0 at the midpoint, strongest at endpoints.
+    const t_cast = midIndex > 0 ? Math.abs(i - midIndex) / midIndex : 0;
+    const castFactor = smoothstep(0, 1, t_cast);
+    const cast = config.castStrength * castFactor * Math.abs(temperature);
+
+    // Anchor direction for this step (warm light vs cool light, highlight vs shadow)
+    const isHighlight = relativePosition > 0;
+    const isWarmLight = temperature > 0;
+
+    let H, C;
+
+    // === NEAR-NEUTRAL TEMPERATURE STUDY BRANCH ===
+    // For near-neutral bases with temperature, create tint from scratch using anchors.
+    // Warm light: highlights → warm (65°), shadows → cool (205°); cool light: opposite.
+    if (isNeutralBase && temperature !== 0) {
+      let anchorA, anchorB;
+      if (isWarmLight) {
+        anchorA = isHighlight ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+        anchorB = isHighlight ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+      } else {
+        anchorA = isHighlight ? COOL_ANCHOR_A : WARM_ANCHOR_A;
+        anchorB = isHighlight ? COOL_ANCHOR_B : WARM_ANCHOR_B;
+      }
+
+      H = normalizeHue(Math.atan2(anchorB, anchorA) * (180 / Math.PI));
+
+      // Chroma driven entirely by cast (position × temperature × castStrength)
+      C = cast * NEUTRAL_TINT_C_MAX;
+
+    } else {
+      // === STANDARD BRANCH (non-neutral or neutral with temp=0) ===
+
+      // Chroma curve (not cast-related — same for both modes)
+      const targetChroma = calculateChroma(baseOklch.C, relativePosition);
+
+      // Hue bias toward temperature anchor, driven by cast
+      let anchorHue;
+      if (isWarmLight) {
+        anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
+      } else {
+        anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
+      }
+
+      // cast is the blend weight toward the anchor (0 at midpoint)
+      const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+
+      // Damp hue shift when chroma is low (prevents unstable casts near neutral)
+      const stabilityFactor = getHueStabilityFactor(targetChroma);
+      H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
+
+      // Chroma with highlight falloff (collapses toward white)
+      // Lower exponent → faster decay → more neutral highlights
+      const highlightFactor = Math.max(0, relativePosition);
+      const highlightChromaFalloff = 1 - Math.pow(highlightFactor, config.highlightChromaExp);
+      C = targetChroma * highlightChromaFalloff;
+
+      // Highlight convergence in OKLab (more stable than hue-angle blending).
+      // castStrength scales the base convergence factor; position and temperature
+      // are handled by wPos and wTemp (convergence has its own spatial profile
+      // that kicks in at the top third, unlike the full-ramp smoothstep above).
+      if (relativePosition > 0 && temperature !== 0) {
+        const highlightPosition = relativePosition;
+        const wPos = smoothstep(0.6, 1.0, highlightPosition);
+        const wTemp = Math.pow(Math.abs(temperature), 0.7);
+        let w = wPos * wTemp * config.castStrength * CONVERGENCE_BASE;
+
+        // Fade out when chroma is too low to shift meaningfully
+        const chromaFade = smoothstep(CONVERGENCE_CHROMA_MIN, CONVERGENCE_CHROMA_REF, C);
+        w *= chromaFade;
+
+        if (w > 0.001) {
+          const anchorA = temperature > 0 ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+          const anchorB = temperature > 0 ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+          const converged = convergeInOklab({ L, C, H }, anchorA, anchorB, w);
+          H = converged.H;
+          C = converged.C;
+        }
+      }
+
+      // Highlight tint floor: retain enough chroma in the top 3 highlights
+      // for mode/temp differences to remain visible.  Placed after convergence
+      // so it doesn't feed artificial chroma into the convergence weight.
+      const isTop3Highlight = i >= steps - 3;
+      if (isTop3Highlight && temperature !== 0) {
+        const tintFloor = config.castStrength * Math.abs(temperature) * HIGHLIGHT_TINT_CAP;
+        C = Math.max(C, tintFloor);
+      }
+    }
+
+    // Endpoint chroma floor — guarantees tinted endpoints when temperature ≠ 0
+    const isEndpoint = (i === 0 || i === steps - 1);
+    if (isEndpoint && temperature !== 0) {
+      const baseFloor = isNeutralBase
+        ? NEUTRAL_ENDPOINT_CHROMA_FLOOR
+        : 0.015;
+      const chromaFloor = baseFloor * Math.abs(temperature);
+      C = Math.max(C, chromaFloor);
+    }
+
+    // Gamut clamp: reduce chroma to fit sRGB while preserving L and H
+    const clamped = clampToSrgbGamut({ L, C, H });
+
+    ramp.push(clamped);
+  }
+
+  return ramp;
+}
+
+/**
+ * Calculate chroma for a given position in the ramp
+ * Saturation peaks near midtones and decreases toward extremes
+ *
+ * @param {number} baseChroma - Base color chroma
+ * @param {number} relativePosition - Position in ramp (-1 to +1)
+ */
+function calculateChroma(baseChroma, relativePosition) {
+  const minRetention = CHROMA_RETENTION;
+  const exponent = CHROMA_CURVE_EXPONENT;
+
+  // Saturation curve: peaks at midpoint, decreases toward extremes
+  // Using a cosine curve for smooth falloff, with exponent to control speed
+  const rawMultiplier = 0.5 + 0.5 * Math.cos(relativePosition * Math.PI);
+
+  // Apply exponent to control falloff speed
+  // exponent < 1 = slower falloff (keeps saturation longer) - good for painterly
+  // exponent > 1 = faster falloff (desaturates quicker)
+  const saturationMultiplier = Math.pow(rawMultiplier, exponent);
+
+  // Apply minimum retention so colors don't become completely desaturated
+  const effectiveMultiplier = minRetention + (1 - minRetention) * saturationMultiplier;
+
+  return baseChroma * effectiveMultiplier;
+}
+
+/**
+ * Validation helper - logs hue deltas per step to console
+ * Use this to verify the algorithm behavior
+ *
+ * @param {string} baseHex - Base color as hex
+ * @param {number} temperature - Light temperature
+ * @param {number} steps - Number of steps
+ * @param {string} mode - 'conservative' or 'painterly'
+ */
+export function validateHueDeltas(baseHex, temperature, steps, mode) {
+  const baseOklch = hexToOklch(baseHex);
+  const ramp = generateOklchRamp(baseOklch, temperature, steps, mode);
+
+  const midIndex = Math.floor(steps / 2);
+  const baseHue = baseOklch.H;
+
+  console.group(`Hue Shift Validation - ${mode.toUpperCase()} mode`);
+  console.log(`Base: ${baseHex} (H: ${baseHue.toFixed(1)}, C: ${baseOklch.C.toFixed(3)})`);
+  console.log(`Temperature: ${temperature}`);
+  console.log(`Steps: ${steps}`);
+  console.log(`Cast strength: ${MODE_CONFIG[mode].castStrength}`);
+  console.log('---');
+
+  const deltas = [];
+  ramp.forEach((color, i) => {
+    const delta = hueDifference(baseHue, color.H);
+    deltas.push(delta);
+    const label = i === midIndex ? '(BASE)' : i < midIndex ? '(shadow)' : '(highlight)';
+    console.log(
+      `Step ${i}: L=${color.L.toFixed(3)}, C=${color.C.toFixed(3)}, ` +
+      `H=${color.H.toFixed(1)} | Δhue: ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}° ${label}`
+    );
+  });
+
+  const darkestDelta = Math.abs(deltas[0]);
+  const lightestDelta = Math.abs(deltas[steps - 1]);
+
+  console.log('---');
+  console.log(`Shadow (darkest) hue delta: ${darkestDelta.toFixed(1)}°`);
+  console.log(`Highlight (lightest) hue delta: ${lightestDelta.toFixed(1)}°`);
+
+  console.groupEnd();
+
+  return {
+    deltas,
+    darkestDelta,
+    lightestDelta,
+    ramp
+  };
+}
+
+/**
+ * Compare Conservative vs Painterly hue shifts for a given color
+ * Logs a side-by-side summary to console
+ *
+ * @param {string} baseHex - Base color as hex (default: saturated blue #3366cc)
+ * @param {number} temperature - Light temperature (default: 1 for max warm)
+ * @param {number} steps - Number of steps (default: 11)
+ */
+export function compareModesConsole(baseHex = '#3366cc', temperature = 1, steps = 11) {
+  const baseOklch = hexToOklch(baseHex);
+
+  console.group(`🎨 Mode Comparison: ${baseHex} @ temp=${temperature}`);
+  console.log(`Base hue: ${baseOklch.H.toFixed(1)}°, Base chroma: ${baseOklch.C.toFixed(3)}`);
+  console.log('');
+
+  const conservative = validateHueDeltas(baseHex, temperature, steps, 'conservative');
+  console.log('');
+  const painterly = validateHueDeltas(baseHex, temperature, steps, 'painterly');
+
+  console.log('');
+  console.log('=== SUMMARY ===');
+  console.log(`Conservative - Shadow: ${conservative.darkestDelta.toFixed(1)}°, Highlight: ${conservative.lightestDelta.toFixed(1)}°`);
+  console.log(`Painterly    - Shadow: ${painterly.darkestDelta.toFixed(1)}°, Highlight: ${painterly.lightestDelta.toFixed(1)}°`);
+  console.log(`Ratio (P/C)  - Shadow: ${(painterly.darkestDelta / conservative.darkestDelta).toFixed(2)}x, Highlight: ${(painterly.lightestDelta / conservative.lightestDelta).toFixed(2)}x`);
+
+  const painterlyLarger = painterly.darkestDelta > conservative.darkestDelta &&
+                          painterly.lightestDelta > conservative.lightestDelta;
+  console.log(`Painterly > Conservative: ${painterlyLarger ? '✓ PASS' : '✗ FAIL'}`);
+
+  console.groupEnd();
+
+  return { conservative, painterly };
+}
+
+/**
+ * Convert OKLCH ramp to hex strings
+ * @param {Object[]} oklchRamp - Array of OKLCH colors
+ * @returns {string[]} Array of hex strings
+ */
+export function rampToHex(oklchRamp) {
+  return oklchRamp.map(oklchToHex);
+}
+
+/**
+ * Check if an OKLCH color is strictly in sRGB gamut (no tolerance)
+ * @param {Object} oklch - Color in OKLCH format
+ * @returns {boolean} True if in gamut
+ */
+function isInGamut(oklch) {
+  const oklab = oklchToOklab(oklch);
+  const linear = oklabToLinearRgb(oklab);
+  return linear.r >= 0 && linear.r <= 1 &&
+         linear.g >= 0 && linear.g <= 1 &&
+         linear.b >= 0 && linear.b <= 1;
+}
+
+/**
+ * Check if OKLCH color would require per-channel clipping when converted to hex
+ * This indicates the gamut clamping didn't fully work
+ * @param {Object} oklch - Color in OKLCH format
+ * @returns {{needsClip: boolean, channels: string[]}} Clipping info
+ */
+function wouldRequireClipping(oklch) {
+  const oklab = oklchToOklab(oklch);
+  const linear = oklabToLinearRgb(oklab);
+  const channels = [];
+  if (linear.r < 0 || linear.r > 1) channels.push('R');
+  if (linear.g < 0 || linear.g > 1) channels.push('G');
+  if (linear.b < 0 || linear.b > 1) channels.push('B');
+  return { needsClip: channels.length > 0, channels };
+}
+
+/**
+ * Debug helper: Generate ramp with gamut mapping logging
+ * Shows before/after for each step to diagnose hue wobble
+ *
+ * @param {string} baseHex - Base color as hex
+ * @param {number} temperature - Light temperature
+ * @param {number} steps - Number of steps
+ * @param {string} mode - 'conservative' or 'painterly'
+ */
+export function debugGamutMapping(baseHex, temperature, steps, mode) {
+  const baseOklch = hexToOklch(baseHex);
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
+  const midIndex = Math.floor(steps / 2);
+  const clippingIssues = [];
+
+  console.group(`Gamut Mapping Debug: ${baseHex} @ temp=${temperature} (${mode})`);
+  console.log(`castStrength: ${config.castStrength}`);
+  console.log('Step | Before L/C/H | In Gamut? | After L/C/H | dC | dH');
+  console.log('-----|--------------|-----------|-------------|-----|----');
+
+  // Simplified ramp generation with logging
+  const lightnessValues = [];
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    lightnessValues.push(L_MIN + t * (L_MAX - L_MIN));
+  }
+
+  const baseLightness = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
+  const midLightness = lightnessValues[midIndex];
+  const lightnessOffset = baseLightness - midLightness;
+
+  for (let i = 0; i < steps; i++) {
+    const L = Math.max(L_MIN, Math.min(L_MAX, lightnessValues[i] + lightnessOffset));
+    const relativePosition = (i - midIndex) / midIndex;
+
+    // Calculate chroma
+    const targetChroma = calculateChroma(baseOklch.C, relativePosition);
+    const highlightFactor = Math.max(0, relativePosition);
+    const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
+    const C = targetChroma * highlightChromaFalloff;
+
+    // Calculate hue via cast
+    const t_cast = midIndex > 0 ? Math.abs(i - midIndex) / midIndex : 0;
+    const castFactor = smoothstep(0, 1, t_cast);
+    const cast = config.castStrength * castFactor * Math.abs(temperature);
+    const isHighlight = relativePosition > 0;
+    const anchorHue = (temperature > 0)
+      ? (isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H)
+      : (isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H);
+    const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+    const stabilityFactor = getHueStabilityFactor(targetChroma);
+    const H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
+
+    const before = { L, C, H };
+    const inGamut = isInGamut(before);
+    const after = clampToSrgbGamut(before);
+    const clipInfo = wouldRequireClipping(after);
+
+    const deltaC = (after.C - before.C).toFixed(4);
+    const deltaH = hueDifference(before.H, after.H).toFixed(1);
+    const clipFlag = clipInfo.needsClip ? `CLIP:${clipInfo.channels.join('')}` : '';
+
+    const label = i < midIndex ? 'shd' : i === midIndex ? 'BASE' : 'hlt';
+    console.log(
+      `${String(i).padStart(4)} | L=${before.L.toFixed(3)} C=${before.C.toFixed(4)} H=${before.H.toFixed(1).padStart(5)} | ` +
+      `${inGamut ? '  Y  ' : '  N  '} | ` +
+      `L=${after.L.toFixed(3)} C=${after.C.toFixed(4)} H=${after.H.toFixed(1).padStart(5)} | ` +
+      `${deltaC} | ${deltaH} [${label}] ${clipFlag}`
+    );
+
+    if (clipInfo.needsClip) {
+      clippingIssues.push({ step: i, channels: clipInfo.channels });
+    }
+  }
+
+  console.log('---');
+  if (clippingIssues.length === 0) {
+    console.log('No per-channel clipping detected - gamut mapping is safe');
+  } else {
+    console.log(`${clippingIssues.length} step(s) would require clipping:`);
+    clippingIssues.forEach(({ step, channels }) => {
+      console.log(`   Step ${step}: ${channels.join(', ')} out of [0,1]`);
+    });
+  }
+
+  console.groupEnd();
+}
+
+/**
+ * Debug helper: Verify highlight hue stability across test cases
+ * Checks for unexpected hue jumps in the top 3 highlight steps
+ *
+ * A "hue jump" is when adjacent steps change hue direction unexpectedly
+ * (e.g., going from +10deg to -5deg shift between adjacent highlights)
+ *
+ * @param {string} baseHex - Base color to test (default: #2F6FED)
+ * @returns {Object} Test results with pass/fail status
+ */
+/**
+ * Debug helper: Print per-step H, Δh from base, and shadow/highlight label
+ * Plus summary of average Δh sign for shadows vs highlights
+ *
+ * @param {string} baseHex - Base color as hex
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {string} mode - 'conservative' or 'painterly'
+ */
+export function debugHueShifts(baseHex, temperature, steps, mode) {
+  const baseOklch = hexToOklch(baseHex);
+  const ramp = generateOklchRamp(baseOklch, temperature, steps, mode);
+  const midIndex = Math.floor(steps / 2);
+  const baseHue = baseOklch.H;
+
+  const shadowDeltas = [];
+  const highlightDeltas = [];
+
+  console.log('');
+  console.log(`=== Debug Hue Shifts ===`);
+  console.log(`Base: ${baseHex} | H: ${baseHue.toFixed(1)}°`);
+  console.log(`Temp: ${temperature > 0 ? '+' : ''}${temperature} | Steps: ${steps} | Mode: ${mode}`);
+  console.log('');
+  console.log('Step | H        | Δh from base | Label');
+  console.log('-----|----------|--------------|----------');
+
+  ramp.forEach((color, i) => {
+    const delta = hueDifference(baseHue, color.H);
+    let label;
+
+    if (i < midIndex) {
+      label = 'shadow';
+      shadowDeltas.push(delta);
+    } else if (i === midIndex) {
+      label = 'BASE';
+    } else {
+      label = 'highlight';
+      highlightDeltas.push(delta);
+    }
+
+    const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1) + '°';
+    console.log(
+      `  ${String(i).padStart(2)} | ${color.H.toFixed(1).padStart(6)}° | ${deltaStr.padStart(12)} | ${label}`
+    );
+  });
+
+  // Summary: average Δh sign for shadows vs highlights
+  const avgShadowDelta = shadowDeltas.length > 0
+    ? shadowDeltas.reduce((a, b) => a + b, 0) / shadowDeltas.length
+    : 0;
+  const avgHighlightDelta = highlightDeltas.length > 0
+    ? highlightDeltas.reduce((a, b) => a + b, 0) / highlightDeltas.length
+    : 0;
+
+  const shadowSign = avgShadowDelta > 0 ? 'positive (+)' : avgShadowDelta < 0 ? 'negative (-)' : 'neutral (0)';
+  const highlightSign = avgHighlightDelta > 0 ? 'positive (+)' : avgHighlightDelta < 0 ? 'negative (-)' : 'neutral (0)';
+
+  console.log('');
+  console.log('=== Summary ===');
+  console.log(`Shadows avg Δh:    ${avgShadowDelta >= 0 ? '+' : ''}${avgShadowDelta.toFixed(1)}° -> ${shadowSign}`);
+  console.log(`Highlights avg Δh: ${avgHighlightDelta >= 0 ? '+' : ''}${avgHighlightDelta.toFixed(1)}° -> ${highlightSign}`);
+  console.log('');
+
+  return {
+    baseHex,
+    baseHue,
+    temperature,
+    steps,
+    mode,
+    shadowDeltas,
+    highlightDeltas,
+    avgShadowDelta,
+    avgHighlightDelta
+  };
+}
+
+export function debugHighlightStability(baseHex = '#2F6FED') {
+  const testCases = [
+    { temp: 0.9, steps: 9, mode: 'conservative' },
+    { temp: 0.9, steps: 11, mode: 'conservative' },
+    { temp: -0.9, steps: 9, mode: 'conservative' },
+    { temp: -0.9, steps: 11, mode: 'conservative' },
+    { temp: 0.9, steps: 9, mode: 'painterly' },
+    { temp: 0.9, steps: 11, mode: 'painterly' },
+    { temp: -0.9, steps: 9, mode: 'painterly' },
+    { temp: -0.9, steps: 11, mode: 'painterly' }
+  ];
+
+  const baseOklch = hexToOklch(baseHex);
+  const results = [];
+  let allPass = true;
+
+  console.group(`Highlight Stability Test: ${baseHex}`);
+  console.log(`Base hue: ${baseOklch.H.toFixed(1)} | Base chroma: ${baseOklch.C.toFixed(3)}`);
+  console.log('');
+
+  for (const tc of testCases) {
+    const ramp = generateOklchRamp(baseOklch, tc.temp, tc.steps, tc.mode);
+    const midIndex = Math.floor(tc.steps / 2);
+
+    // Get highlight steps (last 3)
+    const highlightSteps = ramp.slice(-3);
+    const highlightDeltas = highlightSteps.map(c => hueDifference(baseOklch.H, c.H));
+
+    // Check for sign flips or large jumps between adjacent highlights
+    let hasJump = false;
+    let jumpDetails = '';
+    for (let i = 1; i < highlightDeltas.length; i++) {
+      const prev = highlightDeltas[i - 1];
+      const curr = highlightDeltas[i];
+      // Sign flip (excluding near-zero values)
+      if (Math.abs(prev) > 2 && Math.abs(curr) > 2 && Math.sign(prev) !== Math.sign(curr)) {
+        hasJump = true;
+        jumpDetails = `sign flip at step ${tc.steps - 3 + i}: ${prev.toFixed(1)} -> ${curr.toFixed(1)}`;
+      }
+      // Large delta change (>15 degrees between adjacent highlights)
+      const deltaChange = Math.abs(curr - prev);
+      if (deltaChange > 15) {
+        hasJump = true;
+        jumpDetails = `large jump at step ${tc.steps - 3 + i}: ${deltaChange.toFixed(1)} deg`;
+      }
+    }
+
+    const pass = !hasJump;
+    if (!pass) allPass = false;
+
+    const tempLabel = tc.temp > 0 ? `+${tc.temp}` : `${tc.temp}`;
+    const status = pass ? 'PASS' : 'FAIL';
+    console.log(
+      `${status} | temp=${tempLabel} steps=${tc.steps} ${tc.mode.padEnd(12)} | ` +
+      `highlights: [${highlightDeltas.map(d => (d >= 0 ? '+' : '') + d.toFixed(1)).join(', ')}]` +
+      (jumpDetails ? ` <- ${jumpDetails}` : '')
+    );
+
+    results.push({
+      ...tc,
+      pass,
+      highlightDeltas,
+      jumpDetails
+    });
+  }
+
+  console.log('');
+  console.log(allPass ? 'All tests passed - no hue jumps detected' : 'Some tests failed - hue jumps detected');
+  console.groupEnd();
+
+  return { allPass, results, baseHex };
+}
