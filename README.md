@@ -15,32 +15,32 @@ Serve the repository root with any static file server.
 
 Using Python:
 
-```sh
+'''sh
 python3 -m http.server 8000
-```
+'''
 
-Using Node (requires `http-server` package):
+Using Node (requires 'http-server' package):
 
-```sh
+'''sh
 npx http-server -p 8000
-```
+'''
 
-Then open `http://localhost:8000` in a browser.
+Then open 'http://localhost:8000' in a browser.
 
 ## Styles
 
-Plain CSS in `assets/css/styles.css` — no preprocessor, no build step.
+Plain CSS in 'assets/css/styles.css', no preprocessor, no build step
 
 ## Deployment
 
 The site deploys as a GitHub Pages project site from the repository root.
 
-- URL: `https://creohn.github.io/n-shades-of-colour`
+- URL: 'https://creohn.github.io/n-shades-of-colour'
 - All paths must be relative to ensure correct resolution
 
 ## Project structure
 
-```
+'''
 /
 ├── index.html
 ├── assets/
@@ -57,8 +57,8 @@ The site deploys as a GitHub Pages project site from the repository root.
 ├── CLAUDE.md
 ├── PLAN.md
 └── README.md
-```
+'''
 
-The colour algorithm is isolated in `assets/js/colorModels/`. Application coordination, state management, & UI wiring live in `app.js`. Storage & history logic are separated into their own modules.
+The colour algorithm is isolated in 'assets/js/colorModels/'. Application coordination, state management, & UI wiring live in 'app.js'. Storage & history logic are separated into their own modules.
 
 See PLAN.md for the authoritative design & implementation reference.
