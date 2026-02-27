@@ -74,14 +74,6 @@ export function canUndo() {
 }
 
 /**
- * Get undo buffer info (for display purposes)
- * @returns {{ entry: Object, index: number } | null}
- */
-export function getUndoInfo() {
-  return undoBuffer;
-}
-
-/**
  * Generate a unique ID for a history entry
  * @returns {string}
  */
@@ -142,23 +134,6 @@ export function generateFactualLabel(entry) {
   const tempStr = entry.temperature >= 0 ? `+${entry.temperature.toFixed(2)}` : entry.temperature.toFixed(2);
   const modeStr = entry.mode.charAt(0).toUpperCase() + entry.mode.slice(1);
   return `${entry.baseHex} · ${tempStr} · ${modeStr} · ${entry.steps}`;
-}
-
-/**
- * Get display label for an entry
- * Returns custom label if provided, otherwise factual label
- * @param {Object} entry
- * @returns {string}
- */
-export function getDisplayLabel(entry) {
-  if (entry.customLabel && entry.customLabel.trim()) {
-    return entry.customLabel;
-  }
-  // Legacy support: check old 'label' field
-  if (entry.label && entry.label.trim()) {
-    return entry.label;
-  }
-  return generateFactualLabel(entry);
 }
 
 /**
@@ -330,15 +305,6 @@ export function undo() {
 
   persist();
   return true;
-}
-
-/**
- * Clear the undo buffer
- * Call this when a new generation is committed (handled by addToRecent)
- * or when needed externally
- */
-export function clearUndoBuffer() {
-  undoBuffer = null;
 }
 
 /**

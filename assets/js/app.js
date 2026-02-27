@@ -8,7 +8,7 @@
 import { generateShades } from './colorModels/index.js';
 import { hexToOklch } from './colorModels/convert.js';
 import * as history from './history.js';
-import { generateFactualLabel, getDisplayLabel, generateTokenPrefix } from './history.js';
+import { generateFactualLabel, generateTokenPrefix } from './history.js';
 
 // ==========================================================================
 // State
@@ -16,7 +16,7 @@ import { generateFactualLabel, getDisplayLabel, generateTokenPrefix } from './hi
 
 const state = {
   input: {
-    baseHex: '#2F6FED',
+    baseHex: '#129E8F',
     label: '',
     temperature: 0.25,
     steps: 9,

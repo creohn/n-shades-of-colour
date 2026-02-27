@@ -60,7 +60,7 @@ function isValidEntry(entry) {
   }
 
   // Required fields
-  const requiredStrings = ['id', 'label', 'slugLabel', 'baseHex', 'mode'];
+  const requiredStrings = ['id', 'baseHex', 'mode'];
   const requiredNumbers = ['temperature', 'steps', 'createdAt'];
 
   for (const field of requiredStrings) {
@@ -158,13 +158,3 @@ export function save(data) {
   }
 }
 
-/**
- * Clear all stored data
- */
-export function clear() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (e) {
-    console.error('n Shades of Colour: Failed to clear storage', e);
-  }
-}

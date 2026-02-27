@@ -25,16 +25,18 @@ npx http-server -p 8000
 
 Open `http://localhost:8000`. All JS uses ES module imports — a server is required (file:// won't work).
 
+`shades-reference.html` — visual reference grid of generated shades; useful for eyeballing algorithm output
+
 ## Architecture
 
 ### Module responsibilities
 
 | File | Role |
 |---|---|
-| `assets/js/colorModels/index.js` | Public API — `generateShades(baseHex, temperature, steps, mode)` to `string[]` (darkest to lightest) |
+| `assets/js/colorModels/index.js` | Public API — `generateShades(baseHex, temperature, steps, mode)` → `string[]` (darkest to lightest); `steps` must be 3, 5, 9, or 11; also exports debug helpers (`validateShades`, `compareModes`, `debugGamut`, `debugHighlights`, `debugHue`) |
 | `assets/js/colorModels/convert.js` | Colour space conversions: hex ↔ OKLCH, gamut clamping, OKLab utilities |
 | `assets/js/colorModels/hueShift.js` | Core algorithm: OKLCH shade generation, perceptual ΔE spacing, hue convergence, chroma curves |
-| `assets/js/history.js` | In-memory recent/starred lists + single-level undo buffer; reads/writes via `storage.js` |
+| `assets/js/history.js` | In-memory recent (max 10) / starred lists + single-level undo buffer; reads/writes via `storage.js`; also exports label/token helpers (`generateFactualLabel`, `generateTokenPrefix`) used by `app.js` |
 | `assets/js/storage.js` | localStorage persistence under key `nShadesOfColour`, schema version 1 |
 | `assets/js/app.js` | State ownership, DOM wiring, event handlers, render functions — orchestration only |
 
@@ -50,10 +52,10 @@ Mode differences are **only** `castStrength`: `conservative = 0.30`, `creative =
 
 ### State and data flow (`app.js`)
 
-- **Input changes** to `updatePreview()` — regenerates shade live, no history mutation
-- **"Add to History"** to `history.addToRecent(entry)` — commits snapshot, clears undo buffer
-- **"X" remove** to `history.removeFromRecent(id)` — stores entry + index in undo buffer
-- **Undo** to `history.undo()` — restores to original index, clears buffer
+- **Input changes** → `updatePreview()` — regenerates shade live, no history mutation
+- **"Generate" button** → `history.addToRecent(entry)` — commits snapshot, clears undo buffer
+- **"×" remove** → `history.removeFromRecent(id)` — stores entry + index in undo buffer
+- **Undo** → `history.undo()` — restores to original index, clears buffer
 - Undo buffer is in-memory only; it is cleared on page reload, new generation, undo, and clear-all
 
 ### Storage schema
@@ -63,6 +65,8 @@ localStorage key `nShadesOfColour`, version 1:
 { "version": 1, "recent": [...], "starred": [...] }
 ```
 `HistoryEntry` fields: `id, customLabel, baseHex, temperature, steps, mode, shadesHexes[], tokenPrefix, createdAt`.
+
+Older entries may carry a `label` field instead of `customLabel` — the render code in `app.js` handles this as a fallback.
 
 ### CSS export token formats
 
@@ -83,11 +87,13 @@ See `BEHAVIOUR.md` for the full contract. Key hard invariants:
 
 ## Debug Helpers (browser console)
 
-The `colorModels/index.js` module exports these for validation work:
+The debug functions are plain ES module exports from `colorModels/index.js`. Import directly in a `<script type="module">` against the local dev server:
 
 ```js
-// Exposed as nShadesOfColour.* if window-attached, or import directly
-validateShades(baseHex, temperature, steps, mode)    // logs per-step hue deltas, returns pass/fail
+import { validateShades, compareModes, debugGamut, debugHighlights, debugHue }
+  from './assets/js/colorModels/index.js';
+
+validateShades(baseHex, temperature, steps, mode)  // logs per-step hue deltas, returns pass/fail
 compareModes(baseHex, temperature, steps)          // conservative vs creative side-by-side
 debugGamut(baseHex, temperature, steps, mode)      // gamut mapping before/after
 debugHighlights(baseHex)                           // hue stability across 8 test cases

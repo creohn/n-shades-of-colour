@@ -19,7 +19,7 @@ const DEFAULT_MODE = 'creative';
  *
  * @param {string} baseHex - 6-digit hex string (with or without #), default #2F6FED
  * @param {number} temperature - Light temperature: -1.0 (cool) to +1.0 (warm), default 0.6
- * @param {number} steps - Number of steps: 9 or 11, default 9
+ * @param {number} steps - Number of steps: 3, 5, 9, or 11, default 9
  * @param {string} mode - 'conservative' or 'creative', default 'creative'
  * @returns {string[]} Array of hex strings ordered darkest to lightest
  */
@@ -87,9 +87,9 @@ function validateInputs(hex, temperature, steps, mode) {
     throw new Error(`Invalid temperature: ${temperature}. Expected number between -1 and +1`);
   }
 
-  // Steps must be 9 or 11
-  if (steps !== 9 && steps !== 11) {
-    throw new Error(`Invalid steps: ${steps}. Expected 9 or 11`);
+  // Steps must be 3, 5, 9, or 11
+  if (steps !== 3 && steps !== 5 && steps !== 9 && steps !== 11) {
+    throw new Error(`Invalid steps: ${steps}. Expected 3, 5, 9, or 11`);
   }
 
   // Mode must be conservative or creative

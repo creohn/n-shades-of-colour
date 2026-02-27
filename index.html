@@ -27,13 +27,13 @@
           <label for="input-hex">Base Colour</label>
           <div class="input-row">
             <input type="color" id="input-color-picker" class="color-picker">
-            <input type="text" id="input-hex" placeholder="#9e1221" maxlength="7">
+            <input type="text" id="input-hex" placeholder="#129e8f" maxlength="7">
           </div>
         </div>
 
         <div class="input-group">
           <label for="input-label">Label (optional)</label>
-          <input type="text" id="input-label" placeholder="e.g. Dark Thriller">
+          <input type="text" id="input-label" placeholder="e.g. Silken Jade">
         </div>
 
         <div class="input-group">
@@ -49,8 +49,10 @@
         </div>
 
         <div class="input-group">
-          <label>Steps</label>
-          <div class="button-group" role="radiogroup" aria-label="Number of steps">
+          <label>Number of Shades</label>
+          <div class="button-group" role="radiogroup" aria-label="Number of shades">
+            <button type="button" class="btn-toggle" data-steps="3" aria-pressed="false">3</button>
+            <button type="button" class="btn-toggle" data-steps="5" aria-pressed="false">5</button>
             <button type="button" class="btn-toggle" data-steps="9" aria-pressed="true">9</button>
             <button type="button" class="btn-toggle" data-steps="11" aria-pressed="false">11</button>
           </div>
