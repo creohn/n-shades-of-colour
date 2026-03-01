@@ -34,7 +34,7 @@ All other coordination logic may live in app.js to avoid unnecessary plumbing.
 No additional modules should be created unless they clearly reduce complexity.
 The goal is clarity, not architectural purity.
 
-All paths are relative. No absolute URLs. Compatible with GitHub Pages deployment from repository root.
+All paths are relative. No absolute URLs. Compatible with deployment from repository root.
 
 2. Core Algorithm Approach
 

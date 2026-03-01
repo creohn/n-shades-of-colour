@@ -9,7 +9,7 @@ n Shades of Colour is a static (HTML/CSS/JS) hue-shift tonal shade generator. It
 ## Constraints
 
 - No frameworks, no JS libraries, no CSS frameworks
-- Relative paths only (GitHub Pages compatible)
+- Relative paths only
 - Algorithm logic lives exclusively in `assets/js/colorModels/` — `app.js` must not embed it
 - No new modules unless they clearly reduce complexity (see PLAN.md §1)
 
@@ -25,7 +25,9 @@ npx http-server -p 8000
 
 Open `http://localhost:8000`. All JS uses ES module imports — a server is required (file:// won't work).
 
-`shades-reference.html` — visual reference grid of generated shades; useful for eyeballing algorithm output
+`shades-reference.html` — visual reference grid of generated shades; useful for eyeballing algorithm output. Open at `http://localhost:8000/shades-reference.html`.
+
+Deployed at `https://creohn.de/n-shades-of-colour`
 
 ## Architecture
 
@@ -68,6 +70,12 @@ localStorage key `nShadesOfColour`, version 1:
 
 Older entries may carry a `label` field instead of `customLabel` — the render code in `app.js` handles this as a fallback.
 
+Recent list de-duplication: `addToRecent` only checks if the new entry is an exact duplicate of `recent[0]` (settings + `shadesHexes[]` match); if so it's a no-op. Older identical entries deeper in the list are not deduplicated.
+
+Starred de-duplication key: `baseHex|temperature|steps|mode` — starring an entry that matches an existing starred entry on those four fields is a no-op.
+
+`tokenPrefix` value: CSS-safe slug of `customLabel` if provided; otherwise auto-generated as `tl-{hex}-{w|c}{temp}-{cons|paint}-{steps}` (e.g. `tl-2f6fed-w060-paint-9`).
+
 ### CSS export token formats
 
 Two formats, both zero-indexed (0 = darkest, steps−1 = lightest):
@@ -78,12 +86,19 @@ Slug rules: lowercase, spaces to hyphens, remove non-alphanumeric, collapse repe
 
 ## Behavioural Contracts
 
-See `BEHAVIOUR.md` for the full contract. Key hard invariants:
+See `BEHAVIOUR.md` for the full contract.
+
+**Tier 1 — Hard FAIL (bugs):**
 - OKLCH L must be **strictly monotonic** (darkest to lightest)
 - Midpoint step must equal the **exact input hex** (pinned after OKLCH round-trip)
 - No two adjacent steps may produce the same hex
-- `temperature === 0` must produce **no intentional hue cast**
+- `temperature === 0` must produce **no intentional hue cast** (residual drift < 2° and < 0.005 ΔE is acceptable)
 - `temperature !== 0` — endpoints must have C > 0.005
+
+**Tier 2 — Soft WARN (investigation, not blocking):**
+- Warm vs cool at same absolute temperature must differ by OKLab ΔE ≥ 0.015 in at least one endpoint region (for bases with C ≥ 0.02)
+- Conservative vs creative at same temperature must similarly differ by ΔE ≥ 0.015
+- Within each half (shadows / highlights), max:min adjacent-step ΔE ratio must not exceed 4:1
 
 ## Debug Helpers (browser console)
 

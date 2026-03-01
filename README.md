@@ -7,7 +7,7 @@ n Shades of Colour is a static web tool for generating creative, hue-shifted ton
 - Static HTML, CSS, & JavaScript application
 - No frameworks, no libraries, no server required
 - Algorithm-focused: the core value is the hue-shift logic, not the interface
-- **Not** a simple HSL lightness tool; those already exist
+- **Not** a simple HSL colour tool; those already exist
 
 ## Running locally
 

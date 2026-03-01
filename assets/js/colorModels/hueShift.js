@@ -469,7 +469,9 @@ export function generateOklchShades(baseOklch, temperature, steps, mode) {
       // Highlight tint floor: retain enough chroma in the top 3 highlights
       // for mode/temp differences to remain visible.  Placed after convergence
       // so it doesn't feed artificial chroma into the convergence weight.
-      const isTop3Highlight = i >= steps - 3;
+      // Guard: i > midIndex ensures shadow/base steps are never treated as highlights
+      // (needed for steps < 9 where `steps - 3` can point into shadow/base range).
+      const isTop3Highlight = i > midIndex && i >= steps - 3;
       if (isTop3Highlight && temperature !== 0) {
         const tintFloor = config.castStrength * Math.abs(temperature) * HIGHLIGHT_TINT_CAP;
         C = Math.max(C, tintFloor);

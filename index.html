@@ -4,18 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>n Shades of Colour</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700&family=Poppins:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
 <body>
   <div class="app">
     <header class="header">
-      <div class="header__top">
-        <h1>n Shades of Colour</h1>
-        <nav class="nav">
-          <a href="https://creohn.de" class="nav__link nav__link--active">Back to creohn</a>
-        </nav>
-      </div>
-      <p class="tagline">Creative colour shades for UI design</p>
+      <h1>n Shades of Colour</h1>
+      <nav class="nav">
+        <a href="https://creohn.de" class="nav__link">Back to creohn</a>
+      </nav>
     </header>
 
     <main class="main">
@@ -23,21 +23,22 @@
       <section class="panel panel--input">
         <h2 class="panel__title">Settings</h2>
 
-        <div class="input-group">
-          <label for="input-hex">Base Colour</label>
-          <div class="input-row">
-            <input type="color" id="input-color-picker" class="color-picker">
-            <input type="text" id="input-hex" placeholder="#129e8f" maxlength="7">
+        <div class="base-row">
+          <div class="base-col-colour">
+            <label for="input-hex">Base Colour</label>
+            <div class="colour-input">
+              <input type="color" id="input-color-picker" class="color-picker">
+              <input type="text" id="input-hex" placeholder="#129e8f" maxlength="7">
+            </div>
+          </div>
+          <div class="base-col-label">
+            <label for="input-label">Label (optional)</label>
+            <input type="text" id="input-label" placeholder="e.g. Silken Jade">
           </div>
         </div>
 
         <div class="input-group">
-          <label for="input-label">Label (optional)</label>
-          <input type="text" id="input-label" placeholder="e.g. Silken Jade">
-        </div>
-
-        <div class="input-group">
-          <label for="input-temperature">
+          <label for="input-temperature" class="section-label">
             Light Temperature
             <span class="temperature-value" id="temperature-display">+0.25</span>
           </label>
@@ -49,7 +50,7 @@
         </div>
 
         <div class="input-group">
-          <label>Number of Shades</label>
+          <label class="section-label">Number of Shades</label>
           <div class="button-group" role="radiogroup" aria-label="Number of shades">
             <button type="button" class="btn-toggle" data-steps="3" aria-pressed="false">3</button>
             <button type="button" class="btn-toggle" data-steps="5" aria-pressed="false">5</button>
@@ -59,7 +60,7 @@
         </div>
 
         <div class="input-group">
-          <label>Mode</label>
+          <label class="section-label">Mode</label>
           <div class="button-group" role="radiogroup" aria-label="Algorithm mode">
             <button type="button" class="btn-toggle" data-mode="conservative" aria-pressed="false">Conservative</button>
             <button type="button" class="btn-toggle" data-mode="creative" aria-pressed="true">Creative</button>
@@ -93,7 +94,7 @@
               <option value="long">--color-{label}-{step}</option>
             </select>
           </div>
-          <pre class="export-code" id="export-code"></pre>
+          <div class="export-code" id="export-code"></div>
           <div class="export-actions">
             <button type="button" id="btn-copy" class="btn btn--secondary">Copy to clipboard</button>
             <span class="copy-feedback" id="copy-feedback" hidden>Copied</span>
@@ -124,13 +125,14 @@
       </section>
 
       <div class="history-actions">
-        <button type="button" id="btn-clear-all" class="btn btn--small btn--danger">Clear all</button>
+        <button type="button" id="btn-clear-all" class="btn btn--secondary">Clear all</button>
       </div>
     </aside>
+
+    <footer class="footer">
+      <p>n Shades of Colour is a tool to create shades, use it or not. Maybe touch some gras.</p>
+    </footer>
   </div>
-  <footer class="footer" style="text-align: center; padding-top: 4em;">
-    <p><small>n Shades of Colour is a tool to create shades, use it or not. Maybe touch some gras.</small></p>
-  </footer>
   <script type="module" src="./assets/js/app.js"></script>
 </body>
 </html>
